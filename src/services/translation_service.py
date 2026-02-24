@@ -3,6 +3,7 @@ Translation service for the CJK Translation script.
 """
 
 import logging
+import re
 import time
 from typing import List, Optional, Iterable
 from collections.abc import Iterator as ABCIterator
@@ -16,6 +17,7 @@ from ..config import (
     resolve_model, TRANSLATION_TEMPERATURE, TRANSLATION_MAX_TOKENS, TRANSLATION_TOP_P, CONTEXT_PERCENTAGE,
     PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums
 )
+from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
 
@@ -274,7 +276,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
         logging.info(f"Starting translation of page {page_num + 1}, original text length: {len(page_text)} chars")
         
         # Check for numbered citations in the original text
-        import re
         citation_numbers = re.findall(r'（(\d+)）|[（\(](\d+)[）\)]', page_text)
         if citation_numbers:
             found_numbers = [num for group in citation_numbers for num in group if num]
@@ -348,8 +349,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
                            source_language: str, target_language: str, output_file: Optional[str] = None, 
                            auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate all pages in a document."""
-        from ..output.file_output import FileOutputHandler
-        
         document_text: list[str] = []
         start_page, end_page = extract_page_nums(page_nums_str)
         
@@ -437,8 +436,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
                             source_language: str, target_language: str, output_file: Optional[str] = None, 
                             auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
-        from ..output.file_output import FileOutputHandler
-        
         document_text: list[str] = []
         
         # Determine output format based on whether file output is requested
