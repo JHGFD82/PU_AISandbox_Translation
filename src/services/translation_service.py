@@ -18,7 +18,7 @@ from ..config import (
 )
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..utils import extract_page_nums
-from ..token_tracker import TokenTracker
+from ..tracking.token_tracker import TokenTracker
 
 
 class TranslationService:
@@ -349,7 +349,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                            source_language: str, target_language: str, output_file: Optional[str] = None, 
                            auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate all pages in a document."""
-        from .file_output import FileOutputHandler
+        from ..output.file_output import FileOutputHandler
         
         document_text: list[str] = []
         start_page, end_page = extract_page_nums(page_nums_str)
@@ -438,7 +438,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                             source_language: str, target_language: str, output_file: Optional[str] = None, 
                             auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
-        from .file_output import FileOutputHandler
+        from ..output.file_output import FileOutputHandler
         
         document_text: list[str] = []
         
