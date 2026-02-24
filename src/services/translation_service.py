@@ -282,7 +282,28 @@ Do not provide any prompts to the user, for example: "This is the translation of
         """Translate page text with context."""
         process_text = generate_process_text(abstract_text, page_text, previous_page, CONTEXT_PERCENTAGE, previous_translated)
         return self.translate_text(process_text, source_language, target_language, output_format)
-    
+
+    @staticmethod
+    def _find_split_point(text: str, middle_index: int) -> int:
+        """Find a natural split point near the middle of text.
+
+        Prefers a double-newline paragraph boundary, then any sentence-ending
+        punctuation. Falls back to the raw middle index if neither is found.
+        """
+        # Prefer a paragraph break within ±100 chars of the middle
+        for offset in range(100):
+            for candidate in (middle_index + offset, middle_index - offset):
+                if 0 < candidate < len(text) and text[candidate:candidate + 2] == '\n\n':
+                    return candidate + 2
+
+        # Fall back to a sentence boundary within ±50 chars
+        for offset in range(50):
+            for candidate in (middle_index + offset, middle_index - offset):
+                if 0 < candidate < len(text) and text[candidate] in '.!?。':
+                    return candidate + 1
+
+        return middle_index
+
     def generate_text(self, abstract_text: str, page_text: str, previous_page: str, 
                      page_num: int, source_language: str, target_language: str, output_format: str = "console", 
                      previous_translated: str = "") -> str:
@@ -311,28 +332,8 @@ Do not provide any prompts to the user, for example: "This is the translation of
             if translated_text == TranslationSignal.CONTEXT_LENGTH_EXCEEDED:
                 # Split the text in half and add to FRONT of queue to maintain order
                 middle_index = len(current_part) // 2
-                # Find a good split point (try to split at paragraph breaks or sentences)
-                split_point = middle_index
-                
-                # Look for paragraph breaks near the middle
-                for offset in range(100):  # Look within 100 chars of middle
-                    if middle_index + offset < len(current_part) and current_part[middle_index + offset:middle_index + offset + 2] == '\n\n':
-                        split_point = middle_index + offset + 2
-                        break
-                    elif middle_index - offset > 0 and current_part[middle_index - offset:middle_index - offset + 2] == '\n\n':
-                        split_point = middle_index - offset + 2
-                        break
-                
-                # If no paragraph break found, look for sentence endings
-                if split_point == middle_index:
-                    for offset in range(50):  # Look within 50 chars for sentence endings
-                        if middle_index + offset < len(current_part) and current_part[middle_index + offset] in '.!?。':
-                            split_point = middle_index + offset + 1
-                            break
-                        elif middle_index - offset > 0 and current_part[middle_index - offset] in '.!?。':
-                            split_point = middle_index - offset + 1
-                            break
-                
+                split_point = self._find_split_point(current_part, middle_index)
+
                 first_half = current_part[:split_point].strip()
                 second_half = current_part[split_point:].strip()
                 
