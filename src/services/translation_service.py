@@ -364,62 +364,79 @@ Do not provide any prompts to the user, for example: "This is the translation of
         logging.info(f"Completed translation of page {page_num + 1}, final length: {len(final_result)} chars")
         return final_result
 
-    def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str], page_nums_str: Optional[str],
-                           source_language: str, target_language: str, output_file: Optional[str] = None, 
-                           auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
-        """Translate all pages in a document."""
-        document_text: list[str] = []
-        start_page, end_page = extract_page_nums(page_nums_str)
-        output_format = self._resolve_output_format(output_file, auto_save)
-        
-        # Apply page range if specified
-        if page_nums_str:
-            pages = islice(pages, start_page, end_page + 1)
-
-        # For progressive saving
-        progressive_output_path = None
-
+    def _make_pdf_triples(
+        self,
+        pages: Iterable[PDFPage],
+        start_page: int,
+    ) -> Iterable[tuple[int, str, str]]:
+        """Yield (index, page_text, previous_page_text) for each PDF page."""
         page_text = ""
-        previous_translated = ""
-        for i, page in tqdm(enumerate(pages, start=start_page), desc="Translating... ", ascii=True):
+        for i, page in enumerate(pages, start=start_page):
             previous_page = page_text
             page_text = self.pdf_processor.process_page(page)
-            
+            yield i, page_text, previous_page
+
+    @staticmethod
+    def _make_text_triples(
+        text_pages: List[str],
+    ) -> Iterable[tuple[int, str, str]]:
+        """Yield (index, page_text, previous_page_text) for each pre-extracted text page."""
+        previous_page = ""
+        for i, page_text in enumerate(text_pages):
+            yield i, page_text, previous_page
+            previous_page = page_text
+
+    def _translate_page_sequence(
+        self,
+        page_triples: Iterable[tuple[int, str, str]],
+        abstract_text: str,
+        source_language: str,
+        target_language: str,
+        output_format: str,
+        first_index: int,
+        unit_label: str,
+        progressive_save: bool,
+        output_file: Optional[str],
+        auto_save: bool,
+        input_file_path: Optional[str],
+    ) -> List[str]:
+        """Translate a sequence of (index, page_text, previous_page) triples.
+
+        Shared by translate_document and translate_text_pages.
+        """
+        document_text: list[str] = []
+        progressive_output_path: Optional[str] = None
+        previous_translated = ""
+
+        for i, page_text, previous_page in tqdm(page_triples, desc="Translating... ", ascii=True):
             try:
                 translated_text = self.generate_text(
-                    abstract_text or '', page_text, previous_page, i, source_language, target_language, output_format, previous_translated
+                    abstract_text, page_text, previous_page, i,
+                    source_language, target_language, output_format, previous_translated
                 )
                 document_text.append(translated_text)
-                
-                # Update translated context for next page
                 previous_translated = translated_text
-                
-                # Add delay between pages to prevent rate limiting and content filter triggers
-                # This helps avoid jailbreak detection issues
-                if i > start_page:  # Don't delay on the first page
+
+                if i > first_index:
                     time.sleep(PAGE_DELAY_SECONDS)
-                
-                # Save page progressively if requested
+
                 if progressive_save and (output_file or auto_save):
-                    is_first_page = (i == start_page)
                     progressive_output_path = FileOutputHandler.save_page_progressively(
-                        translated_text, 
+                        translated_text,
                         input_file_path,
                         output_file,
                         auto_save,
                         source_language,
                         target_language,
-                        is_first_page
+                        is_first_page=(i == first_index),
                     )
-                    
+
             except Exception as e:
-                error_message = f"\n***Translation error on page {i + 1}: {e}***\n"
+                error_message = f"\n***Translation error on {unit_label} {i + 1}: {e}***\n"
                 document_text.append(error_message)
-                print(f"Error on page {i + 1}: {e}")
-                
-                # Still save the error message progressively
+                print(f"Error on {unit_label} {i + 1}: {e}")
+
                 if progressive_save and (output_file or auto_save):
-                    is_first_page = (i == start_page and len(document_text) == 1)
                     FileOutputHandler.save_page_progressively(
                         error_message,
                         input_file_path,
@@ -427,78 +444,52 @@ Do not provide any prompts to the user, for example: "This is the translation of
                         auto_save,
                         source_language,
                         target_language,
-                        is_first_page
+                        is_first_page=(i == first_index),
                     )
-                
-                # Continue with next page instead of stopping
                 continue
 
-        # If progressive saving was used, inform user about the output file
         if progressive_save and progressive_output_path:
             print(f"\nProgressive translation saved to: {progressive_output_path}")
 
         return document_text
+
+    def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str], page_nums_str: Optional[str],
+                           source_language: str, target_language: str, output_file: Optional[str] = None, 
+                           auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
+        """Translate all pages in a document."""
+        start_page, end_page = extract_page_nums(page_nums_str)
+        output_format = self._resolve_output_format(output_file, auto_save)
+        if page_nums_str:
+            pages = islice(pages, start_page, end_page + 1)
+        return self._translate_page_sequence(
+            self._make_pdf_triples(pages, start_page),
+            abstract_text=abstract_text or '',
+            source_language=source_language,
+            target_language=target_language,
+            output_format=output_format,
+            first_index=start_page,
+            unit_label='page',
+            progressive_save=progressive_save,
+            output_file=output_file,
+            auto_save=auto_save,
+            input_file_path=input_file_path,
+        )
     
     def translate_text_pages(self, text_pages: List[str], abstract_text: Optional[str],
                             source_language: str, target_language: str, output_file: Optional[str] = None, 
                             auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
-        document_text: list[str] = []
         output_format = self._resolve_output_format(output_file, auto_save)
-
-        # For progressive saving
-        progressive_output_path = None
-
-        previous_page = ""
-        previous_translated = ""
-        for i, page_text in tqdm(enumerate(text_pages), desc="Translating... ", ascii=True):
-            try:
-                translated_text = self.generate_text(
-                    abstract_text or '', page_text, previous_page, i, source_language, target_language, output_format, previous_translated
-                )
-                document_text.append(translated_text)
-                
-                # Update previous page and translated text for context
-                previous_page = page_text
-                previous_translated = translated_text
-                
-                # Add delay between API calls (except for first page)
-                if i > 0:  # Don't delay on the first page
-                    time.sleep(PAGE_DELAY_SECONDS)
-                
-                # Save page progressively if requested
-                if progressive_save and (output_file or auto_save):
-                    is_first_page = (i == 0)
-                    progressive_output_path = FileOutputHandler.save_page_progressively(
-                        translated_text, 
-                        input_file_path,
-                        output_file,
-                        auto_save,
-                        source_language,
-                        target_language,
-                        is_first_page
-                    )
-                    
-            except Exception as e:
-                error_message = f"\n***Translation error on section {i + 1}: {e}***\n"
-                document_text.append(error_message)
-                print(f"Error on section {i + 1}: {e}")
-                
-                # Save page progressively if requested (even with error)
-                if progressive_save and (output_file or auto_save):
-                    is_first_page = (i == 0)
-                    progressive_output_path = FileOutputHandler.save_page_progressively(
-                        error_message, 
-                        input_file_path,
-                        output_file,
-                        auto_save,
-                        source_language,
-                        target_language,
-                        is_first_page
-                    )
-
-        # If progressive saving was used, print the final output path
-        if progressive_save and progressive_output_path:
-            print(f"\nProgressive saving completed. Final output: {progressive_output_path}")
-
-        return document_text
+        return self._translate_page_sequence(
+            self._make_text_triples(text_pages),
+            abstract_text=abstract_text or '',
+            source_language=source_language,
+            target_language=target_language,
+            output_format=output_format,
+            first_index=0,
+            unit_label='section',
+            progressive_save=progressive_save,
+            output_file=output_file,
+            auto_save=auto_save,
+            input_file_path=input_file_path,
+        )
