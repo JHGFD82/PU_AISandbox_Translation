@@ -5,6 +5,7 @@ Translation service for the CJK Translation script.
 import logging
 import re
 import time
+from enum import Enum
 from typing import List, Optional, Iterable
 from collections.abc import Iterator as ABCIterator
 from itertools import islice
@@ -20,6 +21,12 @@ from ..config import (
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
+
+
+class TranslationSignal(str, Enum):
+    """Sentinel values returned by translate_text to signal non-content outcomes."""
+    CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+    CONTENT_FILTER = "content_filter_triggered"
 
 
 class TranslationService:
@@ -148,7 +155,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
 
 """
     
-    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> str:
+    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | TranslationSignal":
         """Translate text using the specified model with retry logic for content filters."""
         model = self._get_model()
         system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
@@ -220,10 +227,10 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 error_result = self._handle_translation_error(e)
                 
                 # If it's a content filter issue and we have retries left, try again
-                if error_result == "content_filter_triggered" and attempt < max_retries - 1:
+                if error_result == TranslationSignal.CONTENT_FILTER and attempt < max_retries - 1:
                     logging.warning(f'Content filter triggered on attempt {attempt + 1}, retrying...')
                     continue
-                elif error_result == "content_filter_triggered":
+                elif error_result == TranslationSignal.CONTENT_FILTER:
                     logging.error(f'Content filter triggered after {max_retries} attempts, skipping this text')
                     return ""
                 else:
@@ -233,7 +240,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         # This should never be reached, but just in case
         return ""
     
-    def _handle_translation_error(self, error: Exception) -> str:
+    def _handle_translation_error(self, error: Exception) -> "str | TranslationSignal":
         """Handle translation errors and return appropriate response."""
         error_type = type(error).__name__
         error_message = str(error)
@@ -241,7 +248,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         # Check for specific PortKey error types
         if "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
             logging.error(f'Context length exceeded: {error_message}')
-            return "context_length_exceeded"
+            return TranslationSignal.CONTEXT_LENGTH_EXCEEDED
         elif "rate_limit" in error_message.lower():
             logging.error(f'Rate limit exceeded: {error_message}')
             raise Exception(f'Rate limit exceeded: {error_message}')
@@ -253,7 +260,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
             raise Exception(f'Authentication error: {error_message}')
         elif "content_filter" in error_message.lower() or "jailbreak" in error_message.lower():
             logging.error(f'Content filter triggered: {error_message}')
-            return "content_filter_triggered"
+            return TranslationSignal.CONTENT_FILTER
         else:
             logging.error(f'API call failed with {error_type}: {error_message}')
             raise Exception(f'API call failed with {error_type}: {error_message}')
@@ -301,7 +308,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 abstract_text, current_part, previous_page, source_language, target_language, output_format, previous_translated
             )
 
-            if translated_text == "context_length_exceeded":
+            if translated_text == TranslationSignal.CONTEXT_LENGTH_EXCEEDED:
                 # Split the text in half and add to FRONT of queue to maintain order
                 middle_index = len(current_part) // 2
                 # Find a good split point (try to split at paragraph breaks or sentences)
@@ -337,7 +344,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     
                 logging.warning(f"Context length exceeded on page {page_num + 1}, split into {len([p for p in [first_half, second_half] if p])} parts")
                 
-            elif translated_text == "content_filter_triggered":
+            elif translated_text == TranslationSignal.CONTENT_FILTER:
                 result.append(f"\n***Content filter triggered on page {page_num + 1} - text skipped***\n")
                 logging.error(f"Content filter triggered on page {page_num + 1}")
             elif translated_text == '':
