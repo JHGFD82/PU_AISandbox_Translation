@@ -257,7 +257,18 @@ Do not provide any prompts to the user, for example: "This is the translation of
         else:
             logging.error(f'API call failed with {error_type}: {error_message}')
             raise Exception(f'API call failed with {error_type}: {error_message}')
-    
+
+    @staticmethod
+    def _resolve_output_format(output_file: Optional[str], auto_save: bool) -> str:
+        """Derive the output format string from the requested output file path and auto-save flag."""
+        if output_file:
+            ext = output_file.lower().rsplit('.', 1)[-1] if '.' in output_file else ''
+            format_map = {'pdf': 'pdf', 'docx': 'docx', 'txt': 'txt'}
+            return format_map.get(ext, 'file')
+        if auto_save:
+            return 'txt'
+        return 'console'
+
     def translate_page_text(self, abstract_text: str, page_text: str, previous_page: str, 
                           source_language: str, target_language: str, output_format: str = "console",
                           previous_translated: str = "") -> str:
@@ -351,19 +362,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         """Translate all pages in a document."""
         document_text: list[str] = []
         start_page, end_page = extract_page_nums(page_nums_str)
-        
-        # Determine output format based on whether file output is requested
-        if output_file:
-            if output_file.lower().endswith('.pdf'):
-                output_format = "pdf"
-            elif output_file.lower().endswith('.txt'):
-                output_format = "txt"
-            else:
-                output_format = "file"
-        elif auto_save:
-            output_format = "txt"  # Auto-save defaults to txt format
-        else:
-            output_format = "console"
+        output_format = self._resolve_output_format(output_file, auto_save)
         
         # Apply page range if specified
         if page_nums_str:
@@ -437,21 +436,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                             auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
         document_text: list[str] = []
-        
-        # Determine output format based on whether file output is requested
-        if output_file:
-            if output_file.lower().endswith('.pdf'):
-                output_format = "pdf"
-            elif output_file.lower().endswith('.docx'):
-                output_format = "docx"
-            elif output_file.lower().endswith('.txt'):
-                output_format = "txt"
-            else:
-                output_format = "file"
-        elif auto_save:
-            output_format = "txt"  # Auto-save defaults to txt format
-        else:
-            output_format = "console"
+        output_format = self._resolve_output_format(output_file, auto_save)
 
         # For progressive saving
         progressive_output_path = None
