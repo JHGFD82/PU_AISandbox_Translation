@@ -16,7 +16,7 @@ from pdfminer.pdfpage import PDFPage
 
 from ..config import (
     resolve_model, TRANSLATION_TEMPERATURE, TRANSLATION_MAX_TOKENS, TRANSLATION_TOP_P, CONTEXT_PERCENTAGE,
-    PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums
+    PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums, get_model_system_role
 )
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
@@ -174,6 +174,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     time.sleep(delay)
                 
                 logging.info(f'Making API call to model: {model}')
+                system_role = get_model_system_role(model)
                 response = self.client.chat.completions.create( # type: ignore[misc]
                     model=model,
                     temperature=TRANSLATION_TEMPERATURE,
@@ -181,7 +182,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     top_p=TRANSLATION_TOP_P,
                     stream=False,
                     messages=[
-                        {"role": "system", "content": system_prompt},
+                        {"role": system_role, "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ]
                 )
