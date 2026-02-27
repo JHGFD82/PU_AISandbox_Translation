@@ -17,7 +17,7 @@ from pdfminer.pdfpage import PDFPage
 from ..config import (
     resolve_model, TRANSLATION_TEMPERATURE, TRANSLATION_MAX_TOKENS, TRANSLATION_TOP_P, CONTEXT_PERCENTAGE,
     PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums, get_model_system_role,
-    model_uses_max_completion_tokens
+    model_uses_max_completion_tokens, model_has_fixed_parameters
 )
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
@@ -64,7 +64,16 @@ class TranslationService:
             {"role": system_role, "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        if model_uses_max_completion_tokens(model):
+        use_completion_tokens = model_uses_max_completion_tokens(model)
+        fixed_params = model_has_fixed_parameters(model)
+        if use_completion_tokens and fixed_params:
+            return self.client.chat.completions.create( # type: ignore[misc]
+                model=model,
+                max_completion_tokens=TRANSLATION_MAX_TOKENS,
+                stream=False,
+                messages=messages,
+            )
+        if use_completion_tokens:
             return self.client.chat.completions.create( # type: ignore[misc]
                 model=model,
                 temperature=TRANSLATION_TEMPERATURE,
