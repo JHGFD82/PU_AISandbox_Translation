@@ -16,7 +16,8 @@ from pdfminer.pdfpage import PDFPage
 
 from ..config import (
     resolve_model, TRANSLATION_TEMPERATURE, TRANSLATION_MAX_TOKENS, TRANSLATION_TOP_P, CONTEXT_PERCENTAGE,
-    PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums, get_model_system_role
+    PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums, get_model_system_role,
+    model_uses_max_completion_tokens
 )
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
@@ -175,10 +176,15 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 
                 logging.info(f'Making API call to model: {model}')
                 system_role = get_model_system_role(model)
+                tokens_kwarg = (
+                    {"max_completion_tokens": TRANSLATION_MAX_TOKENS}
+                    if model_uses_max_completion_tokens(model)
+                    else {"max_tokens": TRANSLATION_MAX_TOKENS}
+                )
                 response = self.client.chat.completions.create( # type: ignore[misc]
                     model=model,
                     temperature=TRANSLATION_TEMPERATURE,
-                    max_tokens=TRANSLATION_MAX_TOKENS,
+                    **tokens_kwarg,
                     top_p=TRANSLATION_TOP_P,
                     stream=False,
                     messages=[
