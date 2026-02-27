@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from enum import Enum
-from typing import List, Optional, Iterable
+from typing import Any, List, Optional, Iterable
 from collections.abc import Iterator as ABCIterator
 from itertools import islice
 from tqdm import tqdm
@@ -176,7 +176,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 
                 logging.info(f'Making API call to model: {model}')
                 system_role = get_model_system_role(model)
-                tokens_kwarg = (
+                tokens_kwarg: dict[str, Any] = (
                     {"max_completion_tokens": TRANSLATION_MAX_TOKENS}
                     if model_uses_max_completion_tokens(model)
                     else {"max_tokens": TRANSLATION_MAX_TOKENS}
@@ -184,7 +184,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 response = self.client.chat.completions.create( # type: ignore[misc]
                     model=model,
                     temperature=TRANSLATION_TEMPERATURE,
-                    **tokens_kwarg,
+                    **tokens_kwarg,  # type: ignore[arg-type]
                     top_p=TRANSLATION_TOP_P,
                     stream=False,
                     messages=[
