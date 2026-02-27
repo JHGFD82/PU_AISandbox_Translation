@@ -56,6 +56,31 @@ class TranslationService:
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
         return resolve_model(requested_model=self.custom_model)
+
+    def _call_translation_api(self, model: str, system_role: str,
+                               system_prompt: str, user_prompt: str) -> Any:
+        """Call the translation API, using the correct token-limit parameter for the model."""
+        messages = [
+            {"role": system_role, "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        if model_uses_max_completion_tokens(model):
+            return self.client.chat.completions.create( # type: ignore[misc]
+                model=model,
+                temperature=TRANSLATION_TEMPERATURE,
+                max_completion_tokens=TRANSLATION_MAX_TOKENS,
+                top_p=TRANSLATION_TOP_P,
+                stream=False,
+                messages=messages,
+            )
+        return self.client.chat.completions.create( # type: ignore[misc]
+            model=model,
+            temperature=TRANSLATION_TEMPERATURE,
+            max_tokens=TRANSLATION_MAX_TOKENS,
+            top_p=TRANSLATION_TOP_P,
+            stream=False,
+            messages=messages,
+        )
     
     def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
         """Create system and user prompt templates for translation."""
@@ -176,22 +201,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 
                 logging.info(f'Making API call to model: {model}')
                 system_role = get_model_system_role(model)
-                tokens_kwarg: dict[str, Any] = (
-                    {"max_completion_tokens": TRANSLATION_MAX_TOKENS}
-                    if model_uses_max_completion_tokens(model)
-                    else {"max_tokens": TRANSLATION_MAX_TOKENS}
-                )
-                response = self.client.chat.completions.create( # type: ignore[misc]
-                    model=model,
-                    temperature=TRANSLATION_TEMPERATURE,
-                    **tokens_kwarg,  # type: ignore[arg-type]
-                    top_p=TRANSLATION_TOP_P,
-                    stream=False,
-                    messages=[
-                        {"role": system_role, "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ]
-                )
+                response = self._call_translation_api(model, system_role, system_prompt, user_prompt)
 
                 assert not isinstance(response, ABCIterator), "Unexpected stream response received."
                 
