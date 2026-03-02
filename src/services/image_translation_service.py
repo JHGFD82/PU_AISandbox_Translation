@@ -17,12 +17,17 @@ from collections.abc import Iterator as ABCIterator
 from portkey_ai import Portkey
 
 from ..config import (
-    IMAGE_TRANSLATION_MODEL, IMAGE_TRANSLATION_MAX_TOKENS,
-    MAX_RETRIES, BASE_RETRY_DELAY,
     get_model_system_role, model_supports_vision, get_vision_capable_models,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     get_model_max_completion_tokens, resolve_model,
 )
+from .constants import MAX_RETRIES, BASE_RETRY_DELAY
+
+# Combined OCR + translation model and token budget
+# Defaults to a reasoning vision model; reasoning about ambiguous characters
+# benefits from having the translation target in scope.
+IMAGE_TRANSLATION_MODEL: str = "gpt-5"
+IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 

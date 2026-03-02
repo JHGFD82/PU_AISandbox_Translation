@@ -15,10 +15,18 @@ from portkey_ai import Portkey
 from pdfminer.pdfpage import PDFPage
 
 from ..config import (
-    resolve_model, TRANSLATION_TEMPERATURE, TRANSLATION_MAX_TOKENS, TRANSLATION_TOP_P, CONTEXT_PERCENTAGE,
-    PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY, extract_page_nums, get_model_system_role,
-    model_uses_max_completion_tokens, model_has_fixed_parameters
+    resolve_model, extract_page_nums, get_model_system_role,
+    model_uses_max_completion_tokens, model_has_fixed_parameters,
 )
+from .constants import PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY
+
+# Translation API parameters
+TRANSLATION_TEMPERATURE: float = 0.5
+TRANSLATION_MAX_TOKENS: int = 4000  # Large enough for academic content with footnotes
+TRANSLATION_TOP_P: float = 0.5
+
+# Fraction of the previous page passed as context to the next translation call
+CONTEXT_PERCENTAGE: float = 0.65
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
