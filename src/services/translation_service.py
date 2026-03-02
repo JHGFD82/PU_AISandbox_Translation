@@ -15,7 +15,7 @@ from portkey_ai import Portkey
 from pdfminer.pdfpage import PDFPage
 
 from ..config import (
-    resolve_model, extract_page_nums, get_model_system_role,
+    resolve_model, get_model_system_role,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
 )
 from .constants import PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY
@@ -487,13 +487,13 @@ Do not provide any prompts to the user, for example: "This is the translation of
 
         return document_text
 
-    def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str], page_nums_str: Optional[str],
-                           source_language: str, target_language: str, output_file: Optional[str] = None, 
+    def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str],
+                           start_page: int, end_page: int,
+                           source_language: str, target_language: str, output_file: Optional[str] = None,
                            auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate all pages in a document."""
-        start_page, end_page = extract_page_nums(page_nums_str)
         output_format = self._resolve_output_format(output_file, auto_save)
-        if page_nums_str:
+        if start_page or end_page:
             pages = islice(pages, start_page, end_page + 1)
         return self._translate_page_sequence(
             self._make_pdf_triples(pages, start_page),
