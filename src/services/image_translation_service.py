@@ -114,11 +114,17 @@ class ImageTranslationService:
         """Get token budget for this model, using per-model catalog override if set."""
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
-    def _build_system_prompt(self, source_language: str, target_language: str) -> str:
+    def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
         script_note = _SCRIPT_GUIDANCE.get(source_language, "")
         script_section = f"\nSCRIPT NOTES:\n{script_note}\n" if script_note else ""
+        vertical_section = (
+            "\nTEXT ORIENTATION:\n"
+            "The majority of text in this image is vertical — written top-to-bottom, "
+            "with columns ordered right-to-left. Read each column from top to bottom, "
+            "proceeding from the rightmost column to the leftmost.\n"
+        ) if vertical else ""
         return f"""You are an expert reader and translator specialising in {source_language} text found in images.
-{script_section}
+{script_section}{vertical_section}
 Your task is to perform two operations on the image:
 1. TRANSCRIBE all visible {source_language} text exactly as it appears.
 2. TRANSLATE that transcribed text into fluent, accurate {target_language}.
@@ -144,10 +150,11 @@ TRANSLATION RULES:
 - For classical or archaic language, prefer a literary translation over a literal one.
 - Do not add explanatory notes, commentary, or translator remarks."""
 
-    def _build_user_prompt(self, source_language: str, target_language: str) -> str:
+    def _build_user_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
+        vertical_note = " The text is predominantly vertical (top-to-bottom, right-to-left columns)." if vertical else ""
         return (
-            f"Transcribe all visible {source_language} text from this image exactly as it appears, "
-            f"then translate it to {target_language}."
+            f"Transcribe all visible {source_language} text from this image exactly as it appears,"
+            f"{vertical_note} then translate it to {target_language}."
         )
 
     def _call_api(
@@ -224,6 +231,7 @@ TRANSLATION RULES:
         file_path: str,
         source_language: str,
         target_language: str,
+        vertical: bool = False,
     ) -> tuple[str, str]:
         """Transcribe and translate an image in a single API call.
 
@@ -231,6 +239,7 @@ TRANSLATION RULES:
             file_path: Absolute path to the image file.
             source_language: Language of text in the image (e.g. 'Chinese').
             target_language: Language to translate into (e.g. 'English').
+            vertical: Whether the text is predominantly vertical (top-to-bottom, right-to-left).
 
         Returns:
             (transcript, translation) — either may be empty if parsing fails.
@@ -249,8 +258,8 @@ TRANSLATION RULES:
             )
 
         system_role = get_model_system_role(model)
-        system_prompt = self._build_system_prompt(source_language, target_language)
-        user_prompt = self._build_user_prompt(source_language, target_language)
+        system_prompt = self._build_system_prompt(source_language, target_language, vertical=vertical)
+        user_prompt = self._build_user_prompt(source_language, target_language, vertical=vertical)
         max_tokens = self._get_max_tokens(model)
 
         try:

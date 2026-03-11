@@ -59,7 +59,7 @@ class TranslationService:
         )
         self.pdf_processor = PDFProcessor()
         # Use provided token tracker or create new one
-        self.token_tracker = token_tracker if token_tracker is not None else TokenTracker(professor=professor, data_file=token_tracker_file)
+        self.token_tracker = token_tracker if token_tracker is not None else TokenTracker(professor=professor or "", data_file=token_tracker_file)
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
