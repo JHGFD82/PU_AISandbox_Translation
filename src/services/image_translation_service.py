@@ -31,6 +31,39 @@ IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_complet
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 
+# Per-language script guidance injected into combined transcription+translation prompts
+_SCRIPT_GUIDANCE: dict[str, str] = {
+    'Chinese': (
+        "The source text uses Chinese characters (hanzi/漢字). "
+        "Transcribe each character exactly as it appears."
+    ),
+    'Simplified Chinese': (
+        "The source text uses Simplified Chinese characters (简体字). "
+        "Transcribe each character exactly in its simplified form — "
+        "do NOT convert to or substitute traditional variants."
+    ),
+    'Traditional Chinese': (
+        "The source text uses Traditional Chinese characters (繁體字). "
+        "Transcribe each character exactly in its traditional form — "
+        "do NOT convert to or substitute simplified variants."
+    ),
+    'Japanese': (
+        "The source text uses Japanese script, which combines kanji (Chinese-derived characters), "
+        "hiragana, katakana, and possibly rōmaji. "
+        "Reproduce all scripts exactly as written. "
+        "Some kanji may be Japanese-specific forms (kokuji) not found in standard Chinese — "
+        "transcribe them faithfully and do NOT substitute simplified or traditional Chinese variants. "
+        "Use kanji ambiguity resolution via translation context before committing to a transcript."
+    ),
+    'Korean': (
+        "The source text uses Korean script (hangul/한글), possibly mixed with hanja (漢字) or Latin text. "
+        "Transcribe all scripts exactly as they appear."
+    ),
+    'English': (
+        "The source text uses the Latin alphabet."
+    ),
+}
+
 
 class ImageTranslationService:
     """Handles combined OCR + translation from images in a single API call.
@@ -82,8 +115,10 @@ class ImageTranslationService:
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
     def _build_system_prompt(self, source_language: str, target_language: str) -> str:
+        script_note = _SCRIPT_GUIDANCE.get(source_language, "")
+        script_section = f"\nSCRIPT NOTES:\n{script_note}\n" if script_note else ""
         return f"""You are an expert reader and translator specialising in {source_language} text found in images.
-
+{script_section}
 Your task is to perform two operations on the image:
 1. TRANSCRIBE all visible {source_language} text exactly as it appears.
 2. TRANSLATE that transcribed text into fluent, accurate {target_language}.
@@ -99,7 +134,7 @@ You MUST return your response in EXACTLY this format, with the section headers o
 TRANSCRIPTION RULES:
 - Reproduce text exactly as it appears in the image — do not correct, modernise, or alter characters.
 - Preserve line breaks, punctuation, numbering, and overall structure.
-- Use surrounding context to resolve ambiguous or partially obscured characters; \
+- Use surrounding context and translation target to resolve ambiguous or partially obscured characters; \
 mark genuinely unreadable text with [unclear] inline rather than a trailing summary.
 - Do not skip any text, including headers, captions, inscriptions, or marginal notes.
 
@@ -111,8 +146,8 @@ TRANSLATION RULES:
 
     def _build_user_prompt(self, source_language: str, target_language: str) -> str:
         return (
-            f"Transcribe all visible {source_language} text from this image "
-            f"and translate it to {target_language}."
+            f"Transcribe all visible {source_language} text from this image exactly as it appears, "
+            f"then translate it to {target_language}."
         )
 
     def _call_api(
