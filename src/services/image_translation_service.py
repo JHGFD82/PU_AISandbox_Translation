@@ -93,7 +93,7 @@ class ImageTranslationService:
         self.token_tracker = (
             token_tracker
             if token_tracker is not None
-            else TokenTracker(professor=professor, data_file=token_tracker_file)
+            else TokenTracker(professor=professor or "", data_file=token_tracker_file)
         )
 
     def _get_model(self) -> str:
