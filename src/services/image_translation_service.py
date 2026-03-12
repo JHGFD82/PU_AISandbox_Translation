@@ -157,6 +157,15 @@ TRANSLATION RULES:
             f"{vertical_note} then translate it to {target_language}."
         )
 
+    def build_prompts(self, source_language: str, target_language: str, vertical: bool = False) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) without calling the API.
+
+        Used by --dry-run mode to preview what would be sent to the model.
+        """
+        system_prompt = self._build_system_prompt(source_language, target_language, vertical=vertical)
+        user_prompt = self._build_user_prompt(source_language, target_language, vertical=vertical)
+        return system_prompt, user_prompt
+
     def _call_api(
         self,
         model: str,

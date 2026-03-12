@@ -198,6 +198,14 @@ Do not provide any prompts to the user, for example: "This is the translation of
 
 """
     
+    def build_prompts(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for the given text without calling the API.
+
+        Used by --dry-run mode to preview what would be sent to the model.
+        """
+        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
+        return system_prompt, user_prompt_template + text
+
     def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | TranslationSignal":
         """Translate text using the specified model with retry logic for content filters."""
         model = self._get_model()
