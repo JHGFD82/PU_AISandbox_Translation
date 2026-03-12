@@ -1,5 +1,5 @@
 """
-Translation service for the CJK Translation script.
+Translation service for the PU AI Sandbox.
 """
 
 import logging
