@@ -17,6 +17,7 @@ from pdfminer.pdfpage import PDFPage
 from ..config import (
     resolve_model, get_model_system_role,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
+    maybe_sync_model_pricing,
 )
 from .constants import PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY
 
@@ -63,7 +64,9 @@ class TranslationService:
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
-        return resolve_model(requested_model=self.custom_model)
+        model = resolve_model(requested_model=self.custom_model)
+        maybe_sync_model_pricing(model)
+        return model
 
     def _call_translation_api(self, model: str, system_role: str,
                                system_prompt: str, user_prompt: str) -> Any:
