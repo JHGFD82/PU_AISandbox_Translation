@@ -14,7 +14,7 @@ from tqdm import tqdm
 from portkey_ai import Portkey
 from pdfminer.pdfpage import PDFPage
 
-from ..config import (
+from ..models import (
     resolve_model, get_model_system_role,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,

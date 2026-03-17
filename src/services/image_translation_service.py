@@ -16,7 +16,7 @@ from collections.abc import Iterator as ABCIterator
 
 from portkey_ai import Portkey
 
-from ..config import (
+from ..models import (
     get_model_system_role, model_supports_vision, get_vision_capable_models,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     get_model_max_completion_tokens, resolve_model,
