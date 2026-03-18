@@ -19,6 +19,9 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,
 )
+from ..output.file_output import FileOutputHandler
+from ..processors.pdf_processor import PDFProcessor, generate_process_text
+from ..tracking.token_tracker import TokenTracker
 from .constants import PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY
 
 # Translation API parameters
@@ -28,9 +31,6 @@ TRANSLATION_TOP_P: float = 0.5
 
 # Fraction of the previous page passed as context to the next translation call
 CONTEXT_PERCENTAGE: float = 0.65
-from ..output.file_output import FileOutputHandler
-from ..processors.pdf_processor import PDFProcessor, generate_process_text
-from ..tracking.token_tracker import TokenTracker
 
 
 class TranslationSignal(str, Enum):

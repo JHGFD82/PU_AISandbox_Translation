@@ -21,48 +21,15 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     get_model_max_completion_tokens, resolve_model,
 )
-from .constants import MAX_RETRIES, BASE_RETRY_DELAY
+from ..processors.image_processor import ImageProcessor
+from ..tracking.token_tracker import TokenTracker
+from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
 
 # Combined OCR + translation model and token budget
 # Defaults to a reasoning vision model; reasoning about ambiguous characters
 # benefits from having the translation target in scope.
 IMAGE_TRANSLATION_MODEL: str = "gpt-5"
 IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
-from ..processors.image_processor import ImageProcessor
-from ..tracking.token_tracker import TokenTracker
-
-# Per-language script guidance injected into combined transcription+translation prompts
-_SCRIPT_GUIDANCE: dict[str, str] = {
-    'Chinese': (
-        "The source text uses Chinese characters (hanzi/漢字). "
-        "Transcribe each character exactly as it appears."
-    ),
-    'Simplified Chinese': (
-        "The source text uses Simplified Chinese characters (简体字). "
-        "Transcribe each character exactly in its simplified form — "
-        "do NOT convert to or substitute traditional variants."
-    ),
-    'Traditional Chinese': (
-        "The source text uses Traditional Chinese characters (繁體字). "
-        "Transcribe each character exactly in its traditional form — "
-        "do NOT convert to or substitute simplified variants."
-    ),
-    'Japanese': (
-        "The source text uses Japanese script, which combines kanji (Chinese-derived characters), "
-        "hiragana, katakana, and possibly rōmaji. "
-        "Reproduce all scripts exactly as written. "
-        "Some kanji may be Japanese-specific forms (kokuji) not found in standard Chinese — "
-        "transcribe them faithfully and do NOT substitute simplified or traditional Chinese variants. "
-        "Use kanji ambiguity resolution via translation context before committing to a transcript."
-    ),
-    'Korean': (
-        "The source text uses Korean script (hangul/한글), possibly mixed with hanja (漢字) or Latin text. "
-        "Transcribe all scripts exactly as they appear."
-    ),
-    'English': (
-        "The source text uses the Latin alphabet."
-    ),
-}
 
 
 class ImageTranslationService:
@@ -115,7 +82,7 @@ class ImageTranslationService:
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
     def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
-        script_note = _SCRIPT_GUIDANCE.get(source_language, "")
+        script_note = IMAGE_TRANSLATION_SCRIPT_GUIDANCE.get(source_language, "")
         script_section = f"\nSCRIPT NOTES:\n{script_note}\n" if script_note else ""
         vertical_section = (
             "\nTEXT ORIENTATION:\n"
