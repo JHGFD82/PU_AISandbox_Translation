@@ -62,6 +62,9 @@ class ImageTranslationService:
             if token_tracker is not None
             else TokenTracker(professor=professor or "", data_file=token_tracker_file)
         )
+        # Ad-hoc notes appended to prompts at runtime (set via --notes flag)
+        self.system_note: Optional[str] = None
+        self.user_note: Optional[str] = None
 
     def _get_model(self) -> str:
         """Get model to use, preferring reasoning vision models."""
@@ -131,6 +134,12 @@ TRANSLATION RULES:
         """
         system_prompt = self._build_system_prompt(source_language, target_language, vertical=vertical)
         user_prompt = self._build_user_prompt(source_language, target_language, vertical=vertical)
+
+        if self.system_note:
+            system_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{self.system_note}"
+        if self.user_note:
+            user_prompt += f"\n\nADDITIONAL NOTES:\n{self.user_note}"
+
         return system_prompt, user_prompt
 
     def _call_api(
@@ -234,8 +243,7 @@ TRANSLATION RULES:
             )
 
         system_role = get_model_system_role(model)
-        system_prompt = self._build_system_prompt(source_language, target_language, vertical=vertical)
-        user_prompt = self._build_user_prompt(source_language, target_language, vertical=vertical)
+        system_prompt, user_prompt = self.build_prompts(source_language, target_language, vertical=vertical)
         max_tokens = self._get_max_tokens(model)
 
         try:

@@ -61,6 +61,9 @@ class TranslationService:
         self.pdf_processor = PDFProcessor()
         # Use provided token tracker or create new one
         self.token_tracker = token_tracker if token_tracker is not None else TokenTracker(professor=professor or "", data_file=token_tracker_file)
+        # Ad-hoc notes appended to prompts at runtime (set via --notes flag)
+        self.system_note: Optional[str] = None
+        self.user_note: Optional[str] = None
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
@@ -113,7 +116,12 @@ class TranslationService:
         )
         
         user_prompt_template = self._build_user_prompt_template(source_language, target_language)
-        
+
+        if self.system_note:
+            system_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{self.system_note}"
+        if self.user_note:
+            user_prompt_template += f"ADDITIONAL NOTES:\n{self.user_note}\n\n"
+
         return system_prompt, user_prompt_template
     
     def _get_formatting_instruction(self, output_format: str) -> str:
