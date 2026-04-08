@@ -11,16 +11,13 @@ from portkey_ai import Portkey
 from ..models import (
     get_model_system_role, model_supports_vision, get_vision_capable_models,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
-    get_model_max_completion_tokens, resolve_model,
+    get_model_max_completion_tokens, resolve_model, get_default_model,
 )
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
 
-# Combined OCR + translation model and token budget
-# Defaults to a reasoning vision model; reasoning about ambiguous characters
-# benefits from having the translation target in scope.
-IMAGE_TRANSLATION_MODEL: str = "gpt-5"
+# Combined OCR + translation token budget
 IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
 
 
@@ -59,15 +56,16 @@ class ImageTranslationService:
         self.user_note: Optional[str] = None
 
     def _get_model(self) -> str:
-        """Get model to use, preferring reasoning vision models."""
+        """Get model to use, preferring the catalog image_translation default."""
+        img_trans_default = get_default_model("image_translation")
         model = resolve_model(
             requested_model=self.custom_model,
-            prefer_model=IMAGE_TRANSLATION_MODEL,
+            prefer_model=img_trans_default,
             require_vision=True,
         )
-        if not self.custom_model and model != IMAGE_TRANSLATION_MODEL:
+        if not self.custom_model and model != img_trans_default:
             logging.warning(
-                f"Preferred image translation model '{IMAGE_TRANSLATION_MODEL}' not available. "
+                f"Preferred image translation model '{img_trans_default}' not available. "
                 f"Using '{model}' instead."
             )
         return model
