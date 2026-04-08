@@ -1,12 +1,4 @@
-"""
-Combined image transcription and translation service.
-
-Unlike chaining ImageProcessorService → TranslationService, this service sends
-a single prompt that asks a vision-capable model to both transcribe and translate
-simultaneously. This lets reasoning models (e.g. gpt-5) resolve ambiguous
-characters using translation context, rather than locking in a transcription
-before translation begins.
-"""
+"""Combined OCR + translation service — single vision prompt resolves ambiguous characters using translation context."""
 
 import logging
 import re

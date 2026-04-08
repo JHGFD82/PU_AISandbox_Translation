@@ -1,6 +1,4 @@
-"""
-Translation service for the PU AI Sandbox.
-"""
+"""Translation service for the PU AI Sandbox."""
 
 import logging
 import re
