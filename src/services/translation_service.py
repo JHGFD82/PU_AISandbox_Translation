@@ -15,7 +15,7 @@ from pdfminer.pdfpage import PDFPage
 from ..models import (
     resolve_model, get_model_system_role,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
-    maybe_sync_model_pricing,
+    maybe_sync_model_pricing, is_model_access_error, remove_model_from_catalog,
 )
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
@@ -275,7 +275,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     return ""
                     
             except Exception as e:
-                error_result = self._handle_translation_error(e)
+                error_result = self._handle_translation_error(e, model)
                 
                 # If it's a content filter issue and we have retries left, try again
                 if error_result == TranslationSignal.CONTENT_FILTER and attempt < max_retries - 1:
@@ -291,13 +291,25 @@ Do not provide any prompts to the user, for example: "This is the translation of
         # This should never be reached, but just in case
         return ""
     
-    def _handle_translation_error(self, error: Exception) -> "str | TranslationSignal":
+    def _handle_translation_error(self, error: Exception, model: str = "") -> "str | TranslationSignal":
         """Handle translation errors and return appropriate response."""
         error_type = type(error).__name__
         error_message = str(error)
         
         # Check for specific PortKey error types
-        if "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
+        if is_model_access_error(error_message):
+            if model:
+                removed = remove_model_from_catalog(model)
+                removed_note = f" It has been removed from the catalog." if removed else ""
+            else:
+                removed_note = ""
+            logging.error(f'Model access denied for {model!r}: {error_message}')
+            raise Exception(
+                f"Model '{model}' is not accessible in the Princeton AI Sandbox — "
+                f"you do not have access to this model.{removed_note} "
+                "Please use a different model or contact your sandbox administrator."
+            )
+        elif "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
             logging.error(f'Context length exceeded: {error_message}')
             return TranslationSignal.CONTEXT_LENGTH_EXCEEDED
         elif "rate_limit" in error_message.lower():
