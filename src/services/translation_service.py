@@ -17,7 +17,7 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,
 )
-from .api_errors import is_content_filter_error, raise_for_model_access_error
+from .api_errors import is_content_filter_error, handle_common_api_errors
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
@@ -294,29 +294,19 @@ Do not provide any prompts to the user, for example: "This is the translation of
     
     def _handle_translation_error(self, error: Exception, model: str = "") -> "str | TranslationSignal":
         """Handle translation errors and return appropriate response."""
-        error_type = type(error).__name__
         error_message = str(error)
 
-        raise_for_model_access_error(error, model)
+        handle_common_api_errors(error, model)
 
         if "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
             logging.error(f'Context length exceeded: {error_message}')
             return TranslationSignal.CONTEXT_LENGTH_EXCEEDED
-        elif "rate_limit" in error_message.lower():
-            logging.error(f'Rate limit exceeded: {error_message}')
-            raise Exception(f'Rate limit exceeded: {error_message}')
-        elif "invalid_request" in error_message.lower():
-            logging.error(f'Invalid request: {error_message}')
-            raise Exception(f'Invalid request: {error_message}')
-        elif "authentication" in error_message.lower() or "unauthorized" in error_message.lower():
-            logging.error(f'Authentication error: {error_message}')
-            raise Exception(f'Authentication error: {error_message}')
         elif is_content_filter_error(error):
             logging.error(f'Content filter triggered: {error_message}')
             return TranslationSignal.CONTENT_FILTER
         else:
-            logging.error(f'API call failed with {error_type}: {error_message}')
-            raise Exception(f'API call failed with {error_type}: {error_message}')
+            logging.error(f'API call failed with {type(error).__name__}: {error_message}')
+            raise Exception(f'API call failed with {type(error).__name__}: {error_message}')
 
     @staticmethod
     def _resolve_output_format(output_file: Optional[str], auto_save: bool) -> str:
