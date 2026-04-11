@@ -4,16 +4,13 @@ import logging
 import re
 import time
 from typing import Any, Optional
-from collections.abc import Iterator as ABCIterator
-
-from portkey_ai import Portkey
 
 from ..models import (
     get_model_system_role, model_supports_vision, get_vision_capable_models,
-    model_uses_max_completion_tokens, model_has_fixed_parameters,
     get_model_max_completion_tokens, resolve_model, get_default_model,
 )
 from .api_errors import APISignal, classify_api_error
+from .base_service import BaseService
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
@@ -22,7 +19,7 @@ from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_G
 IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
 
 
-class ImageTranslationService:
+class ImageTranslationService(BaseService):
     """Handles combined OCR + translation from images in a single API call.
 
     Designed for reasoning-capable vision models (e.g. gpt-5) that can hold
@@ -42,19 +39,8 @@ class ImageTranslationService:
         token_tracker_file: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        self.api_key = api_key
-        self.professor = professor
-        self.custom_model = model
-        self.client = Portkey(api_key=api_key)
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model)
         self.image_processor = ImageProcessor()
-        self.token_tracker = (
-            token_tracker
-            if token_tracker is not None
-            else TokenTracker(professor=professor or "", data_file=token_tracker_file)
-        )
-        # Ad-hoc notes appended to prompts at runtime (set via --notes flag)
-        self.system_note: Optional[str] = None
-        self.user_note: Optional[str] = None
 
     def _get_model(self) -> str:
         """Get model to use, preferring the catalog image_translation default."""
@@ -153,31 +139,7 @@ TRANSLATION RULES:
                 ],
             },
         ]
-        use_completion_tokens = model_uses_max_completion_tokens(model)
-        fixed_params = model_has_fixed_parameters(model)
-
-        if use_completion_tokens and fixed_params:
-            return self.client.chat.completions.create(  # type: ignore[misc]
-                model=model,
-                max_completion_tokens=max_tokens,
-                stream=False,
-                messages=messages,
-            )
-        if use_completion_tokens:
-            return self.client.chat.completions.create(  # type: ignore[misc]
-                model=model,
-                temperature=0.3,
-                max_completion_tokens=max_tokens,
-                stream=False,
-                messages=messages,
-            )
-        return self.client.chat.completions.create(  # type: ignore[misc]
-            model=model,
-            temperature=0.3,
-            max_tokens=max_tokens,
-            stream=False,
-            messages=messages,
-        )
+        return self._create_completion(model, messages, max_tokens, temperature=0.3)
 
     def _parse_response(self, content: str) -> tuple[str, str]:
         """Extract [TRANSCRIPT] and [TRANSLATION] sections from the model response.
@@ -260,39 +222,7 @@ TRANSLATION RULES:
                 response = self._call_api(
                     model, system_role, system_prompt, user_prompt, data_url, max_tokens
                 )
-
-                assert not isinstance(response, ABCIterator), (
-                    "Unexpected stream response received."
-                )
-
-                if response.id:
-                    logging.info(f"API call successful. Response ID: {response.id}")
-                if response.model:
-                    logging.info(f"Model used: {response.model}")
-
-                if (
-                    response.usage
-                    and response.usage.prompt_tokens is not None
-                    and response.usage.completion_tokens is not None
-                    and response.usage.total_tokens is not None
-                ):
-                    usage = self.token_tracker.record_usage(
-                        model=response.model or model,
-                        prompt_tokens=response.usage.prompt_tokens,
-                        completion_tokens=response.usage.completion_tokens,
-                        total_tokens=response.usage.total_tokens,
-                        requested_model=model,
-                    )
-                    logging.info(
-                        f"Tokens used - Prompt: {response.usage.prompt_tokens}, "
-                        f"Completion: {response.usage.completion_tokens}, "
-                        f"Total: {response.usage.total_tokens}, "
-                        f"Cost: ${usage.total_cost:.4f}"
-                    )
-                else:
-                    logging.error(
-                        "CRITICAL: No token usage in response. Token tracking failed!"
-                    )
+                self._record_response_usage(response, model, critical=True)
 
                 if (
                     response.choices

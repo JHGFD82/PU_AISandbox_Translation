@@ -4,19 +4,17 @@ import logging
 import re
 import time
 from typing import Any, List, Optional, Iterable
-from collections.abc import Iterator as ABCIterator
 from itertools import islice
 from tqdm import tqdm
 
-from portkey_ai import Portkey
 from pdfminer.pdfpage import PDFPage
 
 from ..models import (
     resolve_model, get_model_system_role,
-    model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,
 )
 from .api_errors import APISignal, classify_api_error
+from .base_service import BaseService
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
@@ -31,31 +29,12 @@ TRANSLATION_TOP_P: float = 0.5
 CONTEXT_PERCENTAGE: float = 0.65
 
 
-class TranslationService:
+class TranslationService(BaseService):
     """Handles translation operations using PortKey API."""
-    
+
     def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None):
-        """Initialize translation service.
-        
-        Args:
-            api_key: PortKey API key
-            professor: Professor name for token tracking
-            token_tracker: Shared TokenTracker instance
-            token_tracker_file: Custom token tracker file path
-            model: Optional model name to use instead of default
-        """
-        self.api_key = api_key
-        self.professor = professor
-        self.custom_model = model  # Store custom model if provided
-        self.client = Portkey(
-            api_key=api_key
-        )
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model)
         self.pdf_processor = PDFProcessor()
-        # Use provided token tracker or create new one
-        self.token_tracker = token_tracker if token_tracker is not None else TokenTracker(professor=professor or "", data_file=token_tracker_file)
-        # Ad-hoc notes appended to prompts at runtime (set via --notes flag)
-        self.system_note: Optional[str] = None
-        self.user_note: Optional[str] = None
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
@@ -65,36 +44,14 @@ class TranslationService:
 
     def _call_translation_api(self, model: str, system_role: str,
                                system_prompt: str, user_prompt: str) -> Any:
-        """Call the translation API, using the correct token-limit parameter for the model."""
+        """Call the translation API with the correct token-limit parameter for the model."""
         messages = [
             {"role": system_role, "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        use_completion_tokens = model_uses_max_completion_tokens(model)
-        fixed_params = model_has_fixed_parameters(model)
-        if use_completion_tokens and fixed_params:
-            return self.client.chat.completions.create( # type: ignore[misc]
-                model=model,
-                max_completion_tokens=TRANSLATION_MAX_TOKENS,
-                stream=False,
-                messages=messages,
-            )
-        if use_completion_tokens:
-            return self.client.chat.completions.create( # type: ignore[misc]
-                model=model,
-                temperature=TRANSLATION_TEMPERATURE,
-                max_completion_tokens=TRANSLATION_MAX_TOKENS,
-                top_p=TRANSLATION_TOP_P,
-                stream=False,
-                messages=messages,
-            )
-        return self.client.chat.completions.create( # type: ignore[misc]
-            model=model,
-            temperature=TRANSLATION_TEMPERATURE,
-            max_tokens=TRANSLATION_MAX_TOKENS,
-            top_p=TRANSLATION_TOP_P,
-            stream=False,
-            messages=messages,
+        return self._create_completion(
+            model, messages, TRANSLATION_MAX_TOKENS,
+            temperature=TRANSLATION_TEMPERATURE, top_p=TRANSLATION_TOP_P,
         )
     
     def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
@@ -230,33 +187,8 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 logging.info(f'Making API call to model: {model}')
                 system_role = get_model_system_role(model)
                 response = self._call_translation_api(model, system_role, system_prompt, user_prompt)
+                self._record_response_usage(response, model)
 
-                assert not isinstance(response, ABCIterator), "Unexpected stream response received."
-                
-                # Log response details
-                if response.id:
-                    logging.info(f'API call successful. Response ID: {response.id}')
-                if response.model:
-                    logging.info(f'Model used: {response.model}')
-                
-                # Log token usage if available
-                if response.usage and response.usage.prompt_tokens is not None and response.usage.completion_tokens is not None and response.usage.total_tokens is not None:
-                    # Record token usage
-                    usage = self.token_tracker.record_usage(
-                        model=response.model or model,
-                        prompt_tokens=response.usage.prompt_tokens,
-                        completion_tokens=response.usage.completion_tokens,
-                        total_tokens=response.usage.total_tokens,
-                        requested_model=model
-                    )
-                    
-                    logging.info(f'Tokens used - Prompt: {response.usage.prompt_tokens}, '
-                               f'Completion: {response.usage.completion_tokens}, '
-                               f'Total: {response.usage.total_tokens}, '
-                               f'Cost: ${usage.total_cost:.4f}')
-                else:
-                    logging.warning('No token usage information available in response.')
-                
                 if response.choices and len(response.choices) > 0 and response.choices[0].message:
                     content = response.choices[0].message.content
                     if content is not None and isinstance(content, str):
