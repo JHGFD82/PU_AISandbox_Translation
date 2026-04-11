@@ -2,18 +2,16 @@
 
 import logging
 import re
-import time
 from typing import Any, Optional
 
 from ..models import (
     get_model_system_role, model_supports_vision, get_vision_capable_models,
     get_model_max_completion_tokens, resolve_model, get_default_model,
 )
-from .api_errors import APISignal, classify_api_error
 from .base_service import BaseService
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
-from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
+from .constants import MAX_RETRIES, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
 
 # Combined OCR + translation token budget
 IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
@@ -205,64 +203,45 @@ TRANSLATION RULES:
             logging.error(f"Failed to read image {file_path}: {e}")
             raise
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                if attempt > 0:
-                    delay = BASE_RETRY_DELAY * (2 ** attempt) + (0.1 * attempt)
-                    logging.info(
-                        f"Retrying image translation "
-                        f"(attempt {attempt + 1}/{MAX_RETRIES}) after {delay:.1f}s..."
-                    )
-                    time.sleep(delay)
-
-                logging.info(
-                    f"Making image translation API call to model: {model} "
-                    f"(system role: {system_role}, max_tokens: {max_tokens})"
-                )
-                response = self._call_api(
-                    model, system_role, system_prompt, user_prompt, data_url, max_tokens
-                )
-                self._record_response_usage(response, model, critical=True)
-
-                if (
-                    response.choices
-                    and len(response.choices) > 0
-                    and response.choices[0].message
-                ):
-                    content = response.choices[0].message.content
-                    if content is None:
-                        logging.warning(
-                            f"Response content is None. "
-                            f"Raw message: {response.choices[0].message}"
-                        )
-                        continue
-                    if not isinstance(content, str):
-                        logging.warning(
-                            f"Unexpected content type {type(content)}: {content!r}. Retrying..."
-                        )
-                        continue
-                    if not content.strip():
-                        logging.warning(
-                            f"Empty response (attempt {attempt + 1}/{MAX_RETRIES}). Retrying..."
-                        )
-                        continue
-                    return self._parse_response(content)
-                else:
-                    logging.warning("No choices in API response. Retrying...")
-                    continue
-
-            except Exception as e:
-                signal = classify_api_error(e, model)
-                if signal == APISignal.CONTENT_FILTER and attempt < MAX_RETRIES - 1:
+        def body(attempt: int) -> Any:
+            logging.info(
+                f"Making image translation API call to model: {model} "
+                f"(system role: {system_role}, max_tokens: {max_tokens})"
+            )
+            response = self._call_api(
+                model, system_role, system_prompt, user_prompt, data_url, max_tokens
+            )
+            self._record_response_usage(response, model, critical=True)
+            if (
+                response.choices
+                and len(response.choices) > 0
+                and response.choices[0].message
+            ):
+                content = response.choices[0].message.content
+                if content is None:
                     logging.warning(
-                        f"Content filter triggered "
-                        f"(attempt {attempt + 1}/{MAX_RETRIES}). Retrying..."
+                        f"Response content is None. "
+                        f"Raw message: {response.choices[0].message}"
                     )
-                    continue
-                logging.error(f"API error: {e}")
-                raise
+                    return None
+                if not isinstance(content, str):
+                    logging.warning(
+                        f"Unexpected content type {type(content)}: {content!r}. Retrying..."
+                    )
+                    return None
+                if not content.strip():
+                    logging.warning(
+                        f"Empty response (attempt {attempt + 1}/{MAX_RETRIES}). Retrying..."
+                    )
+                    return None
+                return self._parse_response(content)
+            logging.warning("No choices in API response. Retrying...")
+            return None
 
-        raise RuntimeError(
-            "Image translation returned no content after maximum retries — "
-            "check model response format in debug logs."
+        return self._run_with_retry(
+            body, model, "image translation",
+            timeout_msg=(
+                "Image translation returned no content after maximum retries — "
+                "check model response format in debug logs."
+            ),
         )

@@ -13,12 +13,12 @@ from ..models import (
     resolve_model, get_model_system_role,
     maybe_sync_model_pricing,
 )
-from .api_errors import APISignal, classify_api_error
+from .api_errors import APISignal
 from .base_service import BaseService
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
-from .constants import PAGE_DELAY_SECONDS, MAX_RETRIES, BASE_RETRY_DELAY
+from .constants import PAGE_DELAY_SECONDS
 
 # Translation API parameters
 TRANSLATION_TEMPERATURE: float = 0.5
@@ -171,49 +171,28 @@ Do not provide any prompts to the user, for example: "This is the translation of
         model = self._get_model()
         system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
         user_prompt = user_prompt_template + text
-        
-        # Retry logic for content filter issues
-        max_retries = MAX_RETRIES
-        base_delay = BASE_RETRY_DELAY
-        
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    # Exponential backoff with jitter
-                    delay = base_delay * (2 ** attempt) + (0.1 * attempt)
-                    logging.info(f'Retrying API call (attempt {attempt + 1}/{max_retries}) after {delay:.1f}s delay...')
-                    time.sleep(delay)
-                
-                logging.info(f'Making API call to model: {model}')
-                system_role = get_model_system_role(model)
-                response = self._call_translation_api(model, system_role, system_prompt, user_prompt)
-                self._record_response_usage(response, model)
 
-                if response.choices and len(response.choices) > 0 and response.choices[0].message:
-                    content = response.choices[0].message.content
-                    if content is not None and isinstance(content, str):
-                        print("\n" + content)
-                        logging.info('Translation completed successfully.')
-                        return content
-                else:
-                    print("\n[No content returned by the model]")
-                    logging.warning('No content returned by the model.')
-                    return ""
-                    
-            except Exception as e:
-                signal = classify_api_error(e, model)
+        def body(attempt: int) -> Any:
+            logging.info(f'Making API call to model: {model}')
+            system_role = get_model_system_role(model)
+            response = self._call_translation_api(model, system_role, system_prompt, user_prompt)
+            self._record_response_usage(response, model)
+            if response.choices and len(response.choices) > 0 and response.choices[0].message:
+                content = response.choices[0].message.content
+                if content is not None and isinstance(content, str):
+                    print("\n" + content)
+                    logging.info('Translation completed successfully.')
+                    return content
+                return None  # content was None or wrong type — retry
+            print("\n[No content returned by the model]")
+            logging.warning('No content returned by the model.')
+            return ""  # terminal empty result
 
-                if signal == APISignal.CONTENT_FILTER and attempt < max_retries - 1:
-                    logging.warning(f'Content filter triggered on attempt {attempt + 1}, retrying...')
-                    continue
-                elif signal == APISignal.CONTENT_FILTER:
-                    logging.error(f'Content filter triggered after {max_retries} attempts, skipping this text')
-                    return ""
-                else:
-                    return signal
-        
-        # This should never be reached, but just in case
-        return ""
+        return self._run_with_retry(
+            body, model, "translation",
+            timeout_msg="Translation returned no content after maximum retries.",
+            return_signal_on_error=True,
+        )
     
     @staticmethod
     def _resolve_output_format(output_file: Optional[str], auto_save: bool) -> str:
