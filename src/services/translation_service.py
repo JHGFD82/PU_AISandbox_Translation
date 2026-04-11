@@ -16,7 +16,7 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,
 )
-from .api_errors import TranslationSignal, handle_translation_api_error
+from .api_errors import APISignal, classify_api_error
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
@@ -209,7 +209,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
         return system_prompt, user_prompt_template + text
 
-    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | TranslationSignal":
+    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | APISignal":
         """Translate text using the specified model with retry logic for content filters."""
         model = self._get_model()
         system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
@@ -269,12 +269,12 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     return ""
                     
             except Exception as e:
-                signal = handle_translation_api_error(e, model)
+                signal = classify_api_error(e, model)
 
-                if signal == TranslationSignal.CONTENT_FILTER and attempt < max_retries - 1:
+                if signal == APISignal.CONTENT_FILTER and attempt < max_retries - 1:
                     logging.warning(f'Content filter triggered on attempt {attempt + 1}, retrying...')
                     continue
-                elif signal == TranslationSignal.CONTENT_FILTER:
+                elif signal == APISignal.CONTENT_FILTER:
                     logging.error(f'Content filter triggered after {max_retries} attempts, skipping this text')
                     return ""
                 else:
@@ -347,7 +347,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 abstract_text, current_part, previous_page, source_language, target_language, output_format, previous_translated
             )
 
-            if translated_text == TranslationSignal.CONTEXT_LENGTH_EXCEEDED:
+            if translated_text == APISignal.CONTEXT_LENGTH_EXCEEDED:
                 # Split the text in half and add to FRONT of queue to maintain order
                 middle_index = len(current_part) // 2
                 split_point = self._find_split_point(current_part, middle_index)
@@ -363,7 +363,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     
                 logging.warning(f"Context length exceeded on page {page_num + 1}, split into {len([p for p in [first_half, second_half] if p])} parts")
                 
-            elif translated_text == TranslationSignal.CONTENT_FILTER:
+            elif translated_text == APISignal.CONTENT_FILTER:
                 result.append(f"\n***Content filter triggered on page {page_num + 1} - text skipped***\n")
                 logging.error(f"Content filter triggered on page {page_num + 1}")
             elif translated_text == '':
