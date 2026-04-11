@@ -13,6 +13,7 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     get_model_max_completion_tokens, resolve_model, get_default_model,
 )
+from .api_errors import is_content_filter_error
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 from .constants import MAX_RETRIES, BASE_RETRY_DELAY, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
@@ -321,11 +322,7 @@ TRANSLATION RULES:
                     continue
 
             except Exception as e:
-                error_str = str(e).lower()
-                is_content_filter = (
-                    "content_filter" in error_str or "jailbreak" in error_str
-                )
-                if is_content_filter and attempt < MAX_RETRIES - 1:
+                if is_content_filter_error(e) and attempt < MAX_RETRIES - 1:
                     logging.warning(
                         f"Content filter triggered "
                         f"(attempt {attempt + 1}/{MAX_RETRIES}). Retrying..."

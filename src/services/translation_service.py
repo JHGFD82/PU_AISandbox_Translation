@@ -15,8 +15,9 @@ from pdfminer.pdfpage import PDFPage
 from ..models import (
     resolve_model, get_model_system_role,
     model_uses_max_completion_tokens, model_has_fixed_parameters,
-    maybe_sync_model_pricing, is_model_access_error, remove_model_from_catalog,
+    maybe_sync_model_pricing,
 )
+from .api_errors import is_content_filter_error, raise_for_model_access_error
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
@@ -295,21 +296,10 @@ Do not provide any prompts to the user, for example: "This is the translation of
         """Handle translation errors and return appropriate response."""
         error_type = type(error).__name__
         error_message = str(error)
-        
-        # Check for specific PortKey error types
-        if is_model_access_error(error_message):
-            if model:
-                removed = remove_model_from_catalog(model)
-                removed_note = f" It has been removed from the catalog." if removed else ""
-            else:
-                removed_note = ""
-            logging.error(f'Model access denied for {model!r}: {error_message}')
-            raise Exception(
-                f"Model '{model}' is not accessible in the Princeton AI Sandbox — "
-                f"you do not have access to this model.{removed_note} "
-                "Please use a different model or contact your sandbox administrator."
-            )
-        elif "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
+
+        raise_for_model_access_error(error, model)
+
+        if "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
             logging.error(f'Context length exceeded: {error_message}')
             return TranslationSignal.CONTEXT_LENGTH_EXCEEDED
         elif "rate_limit" in error_message.lower():
@@ -321,7 +311,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         elif "authentication" in error_message.lower() or "unauthorized" in error_message.lower():
             logging.error(f'Authentication error: {error_message}')
             raise Exception(f'Authentication error: {error_message}')
-        elif "content_filter" in error_message.lower() or "jailbreak" in error_message.lower():
+        elif is_content_filter_error(error):
             logging.error(f'Content filter triggered: {error_message}')
             return TranslationSignal.CONTENT_FILTER
         else:
