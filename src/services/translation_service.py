@@ -3,7 +3,6 @@
 import logging
 import re
 import time
-from enum import Enum
 from typing import Any, List, Optional, Iterable
 from collections.abc import Iterator as ABCIterator
 from itertools import islice
@@ -17,7 +16,7 @@ from ..models import (
     model_uses_max_completion_tokens, model_has_fixed_parameters,
     maybe_sync_model_pricing,
 )
-from .api_errors import is_content_filter_error, handle_common_api_errors
+from .api_errors import TranslationSignal, handle_translation_api_error
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text
 from ..tracking.token_tracker import TokenTracker
@@ -30,12 +29,6 @@ TRANSLATION_TOP_P: float = 0.5
 
 # Fraction of the previous page passed as context to the next translation call
 CONTEXT_PERCENTAGE: float = 0.65
-
-
-class TranslationSignal(str, Enum):
-    """Sentinel values returned by translate_text to signal non-content outcomes."""
-    CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
-    CONTENT_FILTER = "content_filter_triggered"
 
 
 class TranslationService:
@@ -276,38 +269,20 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     return ""
                     
             except Exception as e:
-                error_result = self._handle_translation_error(e, model)
-                
-                # If it's a content filter issue and we have retries left, try again
-                if error_result == TranslationSignal.CONTENT_FILTER and attempt < max_retries - 1:
+                signal = handle_translation_api_error(e, model)
+
+                if signal == TranslationSignal.CONTENT_FILTER and attempt < max_retries - 1:
                     logging.warning(f'Content filter triggered on attempt {attempt + 1}, retrying...')
                     continue
-                elif error_result == TranslationSignal.CONTENT_FILTER:
+                elif signal == TranslationSignal.CONTENT_FILTER:
                     logging.error(f'Content filter triggered after {max_retries} attempts, skipping this text')
                     return ""
                 else:
-                    # For other errors, return the result or re-raise
-                    return error_result
+                    return signal
         
         # This should never be reached, but just in case
         return ""
     
-    def _handle_translation_error(self, error: Exception, model: str = "") -> "str | TranslationSignal":
-        """Handle translation errors and return appropriate response."""
-        error_message = str(error)
-
-        handle_common_api_errors(error, model)
-
-        if "context_length_exceeded" in error_message.lower() or "maximum context length" in error_message.lower():
-            logging.error(f'Context length exceeded: {error_message}')
-            return TranslationSignal.CONTEXT_LENGTH_EXCEEDED
-        elif is_content_filter_error(error):
-            logging.error(f'Content filter triggered: {error_message}')
-            return TranslationSignal.CONTENT_FILTER
-        else:
-            logging.error(f'API call failed with {type(error).__name__}: {error_message}')
-            raise Exception(f'API call failed with {type(error).__name__}: {error_message}')
-
     @staticmethod
     def _resolve_output_format(output_file: Optional[str], auto_save: bool) -> str:
         """Derive the output format string from the requested output file path and auto-save flag."""
