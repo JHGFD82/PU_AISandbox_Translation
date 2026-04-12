@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from collections import deque
 from typing import Any, List, Optional, Iterable
 from itertools import islice
 from tqdm import tqdm
@@ -27,6 +28,9 @@ TRANSLATION_TOP_P: float = 0.5
 
 # Fraction of the previous page passed as context to the next translation call
 CONTEXT_PERCENTAGE: float = 0.65
+
+# Regex pattern for matching citation/reference numbers in CJK and ASCII brackets
+_CITATION_NUM_RE: str = r'[（\(](\d+)[）\)]'
 
 
 class TranslationService(BaseService):
@@ -101,6 +105,7 @@ Preserve ALL numbering exactly as it appears in the source text. This includes:
 • Japanese reference format: 14　author「title」→ should become "14. Author, 'Title'"
 
 CRITICAL DISTINCTION - DO NOT ADD NUMBERING:
+
 - If the source text has section headings WITHOUT numbers, do NOT add numbers to them
 - Only preserve numbering that already exists in the source
 - Section titles like "背景" or "結論" should remain as "Background" or "Conclusion" without numbers
@@ -111,13 +116,7 @@ numbered references into paragraph form. Keep each reference as a separate numbe
 
 CRITICAL: When you see Japanese reference format like "14　松下安雄監修樋垣元良「福岡藩」", 
 translate it to proper English reference format like "14. Supervised by Matsushita Yasuo, Higaki Motoyoshi, 'Fukuoka Domain'". 
-DO NOT output just the number "14" by itself - always include the full reference text with proper formatting.
-
-IMPORTANT DISTINCTION: Only add a "Footnotes:" section if there are actual footnotes - 
-meaning separate explanatory text at the bottom of the page that corresponds to numbered markers. 
-Do NOT add "Footnotes:" for simple in-text citation numbers like (38), (39) that appear within paragraphs 
-without corresponding explanatory text at the bottom. These are just citations, not footnotes. 
-Only use "Footnotes:" when there is clearly separate footnote text at the end of the content."""
+DO NOT output just the number "14" by itself - always include the full reference text with proper formatting."""
     
     def _build_system_prompt(self, source_language: str, target_language: str, 
                            formatting_instruction: str, numbered_content_instruction: str) -> str:
@@ -248,20 +247,19 @@ Do not provide any prompts to the user, for example: "This is the translation of
                      previous_translated: str = "") -> str:
         """Generate translated text for a page, handling context length limits."""
         result: list[str] = []
-        parts_to_translate = [page_text]
+        parts_to_translate: deque[str] = deque([page_text])
         
         # Debug logging
         logging.info(f"Starting translation of page {page_num + 1}, original text length: {len(page_text)} chars")
         
         # Check for numbered citations in the original text
-        citation_numbers = re.findall(r'（(\d+)）|[（\(](\d+)[）\)]', page_text)
+        citation_numbers = re.findall(_CITATION_NUM_RE, page_text)
         if citation_numbers:
-            found_numbers = [num for group in citation_numbers for num in group if num]
-            logging.info(f"Page {page_num + 1} contains citation numbers: {found_numbers}")
+            logging.info(f"Page {page_num + 1} contains citation numbers: {citation_numbers}")
 
         while parts_to_translate:
-            # Use pop(0) to ensure FIFO processing - translate parts in the correct order
-            current_part = parts_to_translate.pop(0)
+            # Use popleft() to ensure FIFO processing - translate parts in the correct order
+            current_part = parts_to_translate.popleft()
             logging.info(f"Translating part {len(result) + 1} of page {page_num + 1}, length: {len(current_part)} chars")
             
             translated_text = self.translate_page_text(
@@ -276,11 +274,11 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 first_half = current_part[:split_point].strip()
                 second_half = current_part[split_point:].strip()
                 
-                # Insert at the beginning to maintain order
-                if first_half:
-                    parts_to_translate.insert(0, first_half)
+                # Prepend in reverse order so first_half ends up at the front
                 if second_half:
-                    parts_to_translate.insert(1 if first_half else 0, second_half)
+                    parts_to_translate.appendleft(second_half)
+                if first_half:
+                    parts_to_translate.appendleft(first_half)
                     
                 logging.warning(f"Context length exceeded on page {page_num + 1}, split into {len([p for p in [first_half, second_half] if p])} parts")
                 
@@ -295,7 +293,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 logging.info(f"Successfully translated part {len(result)} of page {page_num + 1}, output length: {len(translated_text)} chars")
                 
                 # Check if numbered citations were preserved in translation
-                translated_numbers = re.findall(r'[（\(](\d+)[）\)]', translated_text)
+                translated_numbers = re.findall(_CITATION_NUM_RE, translated_text)
                 if translated_numbers:
                     logging.info(f"Part {len(result)} of page {page_num + 1} contains translated numbers: {translated_numbers}")
 
@@ -393,13 +391,12 @@ Do not provide any prompts to the user, for example: "This is the translation of
         return document_text
 
     def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str],
-                           start_page: int, end_page: int,
+                           start_page: int, end_page: Optional[int],
                            source_language: str, target_language: str, output_file: Optional[str] = None,
                            auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
         """Translate all pages in a document."""
         output_format = self._resolve_output_format(output_file, auto_save)
-        if start_page or end_page:
-            pages = islice(pages, start_page, end_page + 1)
+        pages = islice(pages, start_page, None if end_page is None else end_page + 1)
         return self._translate_page_sequence(
             self._make_pdf_triples(pages, start_page),
             abstract_text=abstract_text or '',
