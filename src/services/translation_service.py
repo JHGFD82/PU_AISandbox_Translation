@@ -16,7 +16,7 @@ from ..models import (
 from .api_errors import APISignal
 from .base_service import BaseService
 from ..output.file_output import FileOutputHandler
-from ..processors.pdf_processor import PDFProcessor, generate_process_text
+from ..processors.pdf_processor import PDFProcessor, generate_process_text, detect_numbered_content
 from ..tracking.token_tracker import TokenTracker
 from .constants import PAGE_DELAY_SECONDS
 
@@ -58,17 +58,20 @@ class TranslationService(BaseService):
             temperature=temperature, top_p=top_p,
         )
     
-    def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
+    def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console", text: str = "") -> tuple[str, str]:
         """Create system and user prompt templates for translation."""
         
+        has_numbered = detect_numbered_content(text) if text else False
+        logging.debug(f"Numbered content detected: {has_numbered}")
+
         formatting_instruction = self._get_formatting_instruction(output_format)
-        numbered_content_instruction = self._get_numbered_content_instruction()
+        numbered_content_instruction = self._get_numbered_content_instruction() if has_numbered else ""
         
         system_prompt = self._build_system_prompt(
             source_language, target_language, formatting_instruction, numbered_content_instruction
         )
         
-        user_prompt_template = self._build_user_prompt_template(source_language, target_language)
+        user_prompt_template = self._build_user_prompt_template(source_language, target_language, has_numbered)
 
         if self.system_note:
             system_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{self.system_note}"
@@ -135,15 +138,14 @@ which includes the text of the current page. Only output the {target_language} t
 the "--Current Page: ". Do not output the context, nor the "--Context: " and "--Current Page: " 
 labels."""
     
-    def _build_user_prompt_template(self, source_language: str, target_language: str) -> str:
+    def _build_user_prompt_template(self, source_language: str, target_language: str, has_numbered: bool = False) -> str:
         """Build the user prompt template."""
-        return f"""Translate only the {source_language} text of the "--Current Page: " to {target_language}, without outputting any other 
-content, and without outputting anything related to "--Context: ", if provided.
-
-CRITICAL: Preserve all numbering systems exactly as they appear in the source (1, 2, 3... or [1], [2]... or ①, ②... etc.).
+        numbered_sections = ""
+        if has_numbered:
+            numbered_sections = f"""\nCRITICAL: Preserve all numbering systems exactly as they appear in the source (1, 2, 3... or [1], [2]... or ①, ②... etc.).
 DO NOT ADD numbering to headings or sections that are not numbered in the source text.
 
-CRITICAL FOR REFERENCES: When translating Japanese reference entries like "14　松下安雄監修樋垣元良「福岡藩」", 
+CRITICAL FOR REFERENCES: When translating reference entries like "14　松下安雄監修樋垣元良「福岡藩」", 
 translate the COMPLETE reference including author names, titles, and formatting. Output should be 
 "14. Author Name, 'Title'" NOT just the isolated number "14". Always translate the full reference text.
 
@@ -154,7 +156,11 @@ NUMBERING CONTINUATION - VERY IMPORTANT:
 - This applies ONLY to numbered reference lists, NOT to section headings.
 
 SECTION HEADINGS: If the source has section headings without numbers, translate them as headings without adding numbers.
+"""
 
+        return f"""Translate only the {source_language} text of the "--Current Page: " to {target_language}, without outputting any other 
+content, and without outputting anything related to "--Context: ", if provided.
+{numbered_sections}
 IMPORTANT: Only add a "Footnotes:" section if there is actual explanatory footnote text at the bottom 
 of the page. Do NOT add "Footnotes:" for simple citation numbers like (38), (39) within paragraphs.
 
@@ -167,13 +173,13 @@ Do not provide any prompts to the user, for example: "This is the translation of
 
         Used by --dry-run mode to preview what would be sent to the model.
         """
-        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
+        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text)
         return system_prompt, user_prompt_template + text
 
     def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | APISignal":
         """Translate text using the specified model with retry logic for content filters."""
         model = self._get_model()
-        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format)
+        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text)
         user_prompt = user_prompt_template + text
 
         def body(attempt: int) -> Any:
