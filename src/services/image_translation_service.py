@@ -15,6 +15,7 @@ from .constants import MAX_RETRIES, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
 
 # Combined OCR + translation token budget
 IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
+IMAGE_TRANSLATION_TEMPERATURE: float = 0.3
 
 
 class ImageTranslationService(BaseService):
@@ -36,8 +37,10 @@ class ImageTranslationService(BaseService):
         token_tracker: Optional[TokenTracker] = None,
         token_tracker_file: Optional[str] = None,
         model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
     ):
-        super().__init__(api_key, professor, token_tracker, token_tracker_file, model)
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p)
         self.image_processor = ImageProcessor()
 
     def _get_model(self) -> str:
@@ -137,7 +140,10 @@ TRANSLATION RULES:
                 ],
             },
         ]
-        return self._create_completion(model, messages, max_tokens, temperature=0.3)
+        temperature = self.custom_temperature if self.custom_temperature is not None else IMAGE_TRANSLATION_TEMPERATURE
+        if self.custom_temperature is not None:
+            logging.info(f"Image translation API params: temperature={temperature}")
+        return self._create_completion(model, messages, max_tokens, temperature=temperature)
 
     def _parse_response(self, content: str) -> tuple[str, str]:
         """Extract [TRANSCRIPT] and [TRANSLATION] sections from the model response.

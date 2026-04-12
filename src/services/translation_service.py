@@ -32,8 +32,8 @@ CONTEXT_PERCENTAGE: float = 0.65
 class TranslationService(BaseService):
     """Handles translation operations using PortKey API."""
 
-    def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None):
-        super().__init__(api_key, professor, token_tracker, token_tracker_file, model)
+    def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None, temperature: Optional[float] = None, top_p: Optional[float] = None):
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p)
         self.pdf_processor = PDFProcessor()
     
     def _get_model(self) -> str:
@@ -45,13 +45,17 @@ class TranslationService(BaseService):
     def _call_translation_api(self, model: str, system_role: str,
                                system_prompt: str, user_prompt: str) -> Any:
         """Call the translation API with the correct token-limit parameter for the model."""
+        temperature = self.custom_temperature if self.custom_temperature is not None else TRANSLATION_TEMPERATURE
+        top_p = self.custom_top_p if self.custom_top_p is not None else TRANSLATION_TOP_P
+        if self.custom_temperature is not None or self.custom_top_p is not None:
+            logging.info(f"Translation API params: temperature={temperature}, top_p={top_p}")
         messages = [
             {"role": system_role, "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         return self._create_completion(
             model, messages, TRANSLATION_MAX_TOKENS,
-            temperature=TRANSLATION_TEMPERATURE, top_p=TRANSLATION_TOP_P,
+            temperature=temperature, top_p=top_p,
         )
     
     def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
