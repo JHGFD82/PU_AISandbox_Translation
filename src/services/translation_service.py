@@ -53,7 +53,7 @@ class TranslationService(BaseService):
         temperature = self.custom_temperature if self.custom_temperature is not None else TRANSLATION_TEMPERATURE
         top_p = self.custom_top_p if self.custom_top_p is not None else TRANSLATION_TOP_P
         if self.custom_temperature is not None or self.custom_top_p is not None:
-            logging.info(f"Translation API params: temperature={temperature}, top_p={top_p}")
+            logging.debug(f"Translation API params: temperature={temperature}, top_p={top_p}")
         messages = [
             {"role": system_role, "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -183,7 +183,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         user_prompt = user_prompt_template + text
 
         def body(attempt: int) -> Any:
-            logging.info(f'Making API call to model: {model}')
+            logging.debug(f'Making API call to model: {model}')
             system_role = get_model_system_role(model)
             response = self._call_translation_api(model, system_role, system_prompt, user_prompt)
             self._record_response_usage(response, model)
@@ -191,7 +191,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 content = response.choices[0].message.content
                 if content is not None and isinstance(content, str):
                     print("\n" + content)
-                    logging.info('Translation completed successfully.')
                     return content
                 return None  # content was None or wrong type — retry
             print("\n[No content returned by the model]")
@@ -251,17 +250,17 @@ Do not provide any prompts to the user, for example: "This is the translation of
         parts_to_translate: deque[str] = deque([page_text])
         
         # Debug logging
-        logging.info(f"Starting translation of page {page_num + 1}, original text length: {len(page_text)} chars")
+        logging.debug(f"Starting translation of page {page_num + 1}, original text length: {len(page_text)} chars")
         
         # Check for numbered citations in the original text
         citation_numbers = re.findall(_CITATION_NUM_RE, page_text)
         if citation_numbers:
-            logging.info(f"Page {page_num + 1} contains citation numbers: {citation_numbers}")
+            logging.debug(f"Page {page_num + 1} contains citation numbers: {citation_numbers}")
 
         while parts_to_translate:
             # Use popleft() to ensure FIFO processing - translate parts in the correct order
             current_part = parts_to_translate.popleft()
-            logging.info(f"Translating part {len(result) + 1} of page {page_num + 1}, length: {len(current_part)} chars")
+            logging.debug(f"Translating part {len(result) + 1} of page {page_num + 1}, length: {len(current_part)} chars")
             
             translated_text = self.translate_page_text(
                 abstract_text, current_part, previous_page, source_language, target_language, output_format, previous_translated
@@ -291,15 +290,15 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 logging.error(f"Translation returned empty result on page {page_num + 1}")
             else:
                 result.append(translated_text)
-                logging.info(f"Successfully translated part {len(result)} of page {page_num + 1}, output length: {len(translated_text)} chars")
+                logging.debug(f"Successfully translated part {len(result)} of page {page_num + 1}, output length: {len(translated_text)} chars")
                 
                 # Check if numbered citations were preserved in translation
                 translated_numbers = re.findall(_CITATION_NUM_RE, translated_text)
                 if translated_numbers:
-                    logging.info(f"Part {len(result)} of page {page_num + 1} contains translated numbers: {translated_numbers}")
+                    logging.debug(f"Part {len(result)} of page {page_num + 1} contains translated numbers: {translated_numbers}")
 
         final_result = f"\n\n-- Page {page_num + 1} -- \n\n" + "\n".join(result)
-        logging.info(f"Completed translation of page {page_num + 1}, final length: {len(final_result)} chars")
+        logging.debug(f"Completed translation of page {page_num + 1}, final length: {len(final_result)} chars")
         return final_result
 
     def _make_pdf_triples(

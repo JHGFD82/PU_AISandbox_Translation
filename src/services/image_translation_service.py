@@ -142,7 +142,7 @@ TRANSLATION RULES:
         ]
         temperature = self.custom_temperature if self.custom_temperature is not None else IMAGE_TRANSLATION_TEMPERATURE
         if self.custom_temperature is not None:
-            logging.info(f"Image translation API params: temperature={temperature}")
+            logging.debug(f"Image translation API params: temperature={temperature}")
         return self._create_completion(model, messages, max_tokens, temperature=temperature)
 
     def _parse_response(self, content: str) -> tuple[str, str]:
@@ -210,7 +210,7 @@ TRANSLATION RULES:
             raise
 
         def body(attempt: int) -> Any:
-            logging.info(
+            logging.debug(
                 f"Making image translation API call to model: {model} "
                 f"(system role: {system_role}, max_tokens: {max_tokens})"
             )
