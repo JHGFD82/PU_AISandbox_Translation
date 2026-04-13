@@ -12,7 +12,7 @@ from pdfminer.pdfpage import PDFPage
 
 from ..models import (
     resolve_model, get_model_system_role,
-    maybe_sync_model_pricing,
+    maybe_sync_model_pricing, get_model_max_completion_tokens,
     OutputOptions,
 )
 from .api_errors import APISignal
@@ -37,8 +37,8 @@ _CITATION_NUM_RE: str = r'[（\(](\d+)[）\)]'
 class TranslationService(BaseService):
     """Handles translation operations using PortKey API."""
 
-    def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None, temperature: Optional[float] = None, top_p: Optional[float] = None):
-        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p)
+    def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None, temperature: Optional[float] = None, top_p: Optional[float] = None, max_tokens: Optional[int] = None):
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p, max_tokens)
         self.pdf_processor = PDFProcessor()
     
     def _get_model(self) -> str:
@@ -58,8 +58,9 @@ class TranslationService(BaseService):
             {"role": system_role, "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        max_tokens = self.custom_max_tokens if self.custom_max_tokens is not None else get_model_max_completion_tokens(model, TRANSLATION_MAX_TOKENS)
         return self._create_completion(
-            model, messages, TRANSLATION_MAX_TOKENS,
+            model, messages, max_tokens,
             temperature=temperature, top_p=top_p,
         )
     

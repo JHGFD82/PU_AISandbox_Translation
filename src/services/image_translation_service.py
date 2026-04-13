@@ -40,8 +40,9 @@ class ImageTranslationService(BaseService):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ):
-        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p)
+        super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p, max_tokens)
         self.image_processor = ImageProcessor()
 
     def _get_model(self) -> str:
@@ -61,6 +62,8 @@ class ImageTranslationService(BaseService):
 
     def _get_max_tokens(self, model: str) -> int:
         """Get token budget for this model, using per-model catalog override if set."""
+        if self.custom_max_tokens is not None:
+            return self.custom_max_tokens
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
     def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
