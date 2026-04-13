@@ -1,6 +1,7 @@
 """Combined OCR + translation service — single vision prompt resolves ambiguous characters using translation context."""
 
 import logging
+import os
 import re
 from typing import Any, Optional
 
@@ -206,7 +207,7 @@ TRANSLATION RULES:
         try:
             data_url = self.image_processor.local_image_to_data_url(file_path)
         except Exception as e:
-            logging.error(f"Failed to read image {file_path}: {e}")
+            logging.error(f"Failed to read image {os.path.basename(file_path)}: {e}")
             raise
 
         def body(attempt: int) -> Any:
