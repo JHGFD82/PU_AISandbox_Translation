@@ -13,6 +13,7 @@ from pdfminer.pdfpage import PDFPage
 from ..models import (
     resolve_model, get_model_system_role,
     maybe_sync_model_pricing,
+    OutputOptions,
 )
 from .api_errors import APISignal
 from .base_service import BaseService
@@ -204,13 +205,13 @@ Do not provide any prompts to the user, for example: "This is the translation of
         )
     
     @staticmethod
-    def _resolve_output_format(output_file: Optional[str], auto_save: bool) -> str:
+    def _resolve_output_format(opts: OutputOptions) -> str:
         """Derive the output format string from the requested output file path and auto-save flag."""
-        if output_file:
-            ext = output_file.lower().rsplit('.', 1)[-1] if '.' in output_file else ''
+        if opts.output_file:
+            ext = opts.output_file.lower().rsplit('.', 1)[-1] if '.' in opts.output_file else ''
             format_map = {'pdf': 'pdf', 'docx': 'docx', 'txt': 'txt'}
             return format_map.get(ext, 'file')
-        if auto_save:
+        if opts.auto_save:
             return 'txt'
         return 'console'
 
@@ -332,9 +333,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         output_format: str,
         first_index: int,
         unit_label: str,
-        progressive_save: bool,
-        output_file: Optional[str],
-        auto_save: bool,
+        opts: OutputOptions,
         input_file_path: Optional[str],
     ) -> List[str]:
         """Translate a sequence of (index, page_text, previous_page) triples.
@@ -357,12 +356,12 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 if i > first_index:
                     time.sleep(PAGE_DELAY_SECONDS)
 
-                if progressive_save and (output_file or auto_save):
+                if opts.progressive_save and (opts.output_file or opts.auto_save):
                     progressive_output_path = FileOutputHandler.save_page_progressively(
                         translated_text,
                         input_file_path,
-                        output_file,
-                        auto_save,
+                        opts.output_file,
+                        opts.auto_save,
                         source_language,
                         target_language,
                         is_first_page=(i == first_index),
@@ -373,29 +372,30 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 document_text.append(error_message)
                 print(f"Error on {unit_label} {i + 1}: {e}")
 
-                if progressive_save and (output_file or auto_save):
+                if opts.progressive_save and (opts.output_file or opts.auto_save):
                     FileOutputHandler.save_page_progressively(
                         error_message,
                         input_file_path,
-                        output_file,
-                        auto_save,
+                        opts.output_file,
+                        opts.auto_save,
                         source_language,
                         target_language,
                         is_first_page=(i == first_index),
                     )
                 continue
 
-        if progressive_save and progressive_output_path:
+        if opts.progressive_save and progressive_output_path:
             print(f"\nProgressive translation saved to: {progressive_output_path}")
 
         return document_text
 
     def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str],
                            start_page: int, end_page: Optional[int],
-                           source_language: str, target_language: str, output_file: Optional[str] = None,
-                           auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
+                           source_language: str, target_language: str,
+                           opts: OutputOptions = OutputOptions(),
+                           input_file_path: Optional[str] = None) -> List[str]:
         """Translate all pages in a document."""
-        output_format = self._resolve_output_format(output_file, auto_save)
+        output_format = self._resolve_output_format(opts)
         pages = islice(pages, start_page, None if end_page is None else end_page + 1)
         return self._translate_page_sequence(
             self._make_pdf_triples(pages, start_page),
@@ -405,17 +405,16 @@ Do not provide any prompts to the user, for example: "This is the translation of
             output_format=output_format,
             first_index=start_page,
             unit_label='page',
-            progressive_save=progressive_save,
-            output_file=output_file,
-            auto_save=auto_save,
+            opts=opts,
             input_file_path=input_file_path,
         )
     
     def translate_text_pages(self, text_pages: List[str], abstract_text: Optional[str],
-                            source_language: str, target_language: str, output_file: Optional[str] = None, 
-                            auto_save: bool = False, progressive_save: bool = False, input_file_path: Optional[str] = None) -> List[str]:
+                            source_language: str, target_language: str,
+                            opts: OutputOptions = OutputOptions(),
+                            input_file_path: Optional[str] = None) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
-        output_format = self._resolve_output_format(output_file, auto_save)
+        output_format = self._resolve_output_format(opts)
         return self._translate_page_sequence(
             self._make_text_triples(text_pages),
             abstract_text=abstract_text or '',
@@ -424,8 +423,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
             output_format=output_format,
             first_index=0,
             unit_label='section',
-            progressive_save=progressive_save,
-            output_file=output_file,
-            auto_save=auto_save,
+            opts=opts,
             input_file_path=input_file_path,
         )
