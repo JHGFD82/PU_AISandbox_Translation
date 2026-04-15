@@ -1,10 +1,14 @@
 """Translation service for the PU AI Sandbox."""
 
 import logging
+import os
 import re
+import shutil
+import tempfile
 import time
 from collections import deque
-from typing import Any, List, Optional, Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Iterable
 from itertools import islice
 from tqdm import tqdm
 
@@ -324,6 +328,94 @@ Do not provide any prompts to the user, for example: "This is the translation of
             yield i, page_text, previous_page
             previous_page = page_text
 
+    def _translate_pages_parallel(
+        self,
+        all_triples: List[tuple[int, str, str]],
+        abstract_text: str,
+        source_language: str,
+        target_language: str,
+        output_format: str,
+        unit_label: str,
+        workers: int,
+        opts: OutputOptions,
+    ) -> List[str]:
+        """Translate pages in parallel using a ThreadPoolExecutor.
+
+        Each page is dispatched as an independent API call.  Previous-page
+        context is the untranslated source text of the prior page (not the
+        prior translation), because translation order is non-deterministic
+        in parallel mode.
+
+        Results are written to numbered temp files so that memory stays
+        bounded even for very large documents.  Temp files are deleted in a
+        ``finally`` block so they are cleaned up even if a worker raises.
+        """
+        n_pages = len(all_triples)
+        actual_workers = min(workers, n_pages)
+
+        if opts.progressive_save:
+            print(
+                "Warning: --progressive-save is not compatible with parallel workers "
+                "and has been disabled for this run."
+            )
+            logging.warning("progressive_save disabled: incompatible with workers > 1")
+
+        if actual_workers < workers:
+            logging.info(
+                f"workers capped at {actual_workers} (document has {n_pages} {unit_label}(s))"
+            )
+
+        tmpdir = tempfile.mkdtemp(prefix="pu_sandbox_translate_")
+        tmp_paths: Dict[int, str] = {}
+
+        def _translate_one(index: int, page_text: str, previous_page: str) -> tuple[int, str]:
+            translated = self.generate_text(
+                abstract_text, page_text, previous_page, index,
+                source_language, target_language, output_format,
+                previous_translated="",  # no prior translation in parallel mode
+            )
+            tmp_path = os.path.join(tmpdir, f"page_{index:06d}.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(translated)
+            return index, tmp_path
+
+        try:
+            futures: Dict = {}
+            with ThreadPoolExecutor(max_workers=actual_workers) as executor:
+                for idx, page_text, previous_page in all_triples:
+                    future = executor.submit(_translate_one, idx, page_text, previous_page)
+                    futures[future] = idx
+
+                desc = f"Translating ({actual_workers} workers)... "
+                for future in tqdm(as_completed(futures), total=n_pages, desc=desc, ascii=True):
+                    idx = futures[future]
+                    try:
+                        _, tmp_path = future.result()
+                        tmp_paths[idx] = tmp_path
+                    except Exception as e:
+                        error_msg = f"\n***Translation error on {unit_label} {idx + 1}: {e}***\n"
+                        print(f"Error on {unit_label} {idx + 1}: {e}")
+                        logging.error(f"Parallel worker error on {unit_label} {idx + 1}: {e}")
+                        tmp_path = os.path.join(tmpdir, f"page_{idx:06d}.tmp")
+                        with open(tmp_path, "w", encoding="utf-8") as f:
+                            f.write(error_msg)
+                        tmp_paths[idx] = tmp_path
+
+            # Assemble results in original page order
+            document_text: list[str] = []
+            for idx, _, _ in all_triples:
+                tmp_path = tmp_paths.get(idx)
+                if tmp_path and os.path.exists(tmp_path):
+                    with open(tmp_path, "r", encoding="utf-8") as f:
+                        document_text.append(f.read())
+                else:
+                    document_text.append(f"\n***Missing result for {unit_label} {idx + 1}***\n")
+
+            return document_text
+
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def _translate_page_sequence(
         self,
         page_triples: Iterable[tuple[int, str, str]],
@@ -335,11 +427,29 @@ Do not provide any prompts to the user, for example: "This is the translation of
         unit_label: str,
         opts: OutputOptions,
         input_file_path: Optional[str],
+        workers: int = 1,
     ) -> List[str]:
         """Translate a sequence of (index, page_text, previous_page) triples.
 
-        Shared by translate_document and translate_text_pages.
+        Shared by translate_document and translate_text_pages.  When
+        ``workers > 1`` the generator is materialised up-front and pages are
+        dispatched in parallel; otherwise the existing sequential path with
+        per-page delays and optional progressive save is used.
         """
+        if workers > 1:
+            all_triples = list(page_triples)
+            return self._translate_pages_parallel(
+                all_triples,
+                abstract_text=abstract_text,
+                source_language=source_language,
+                target_language=target_language,
+                output_format=output_format,
+                unit_label=unit_label,
+                workers=workers,
+                opts=opts,
+            )
+
+        # --- sequential path (unchanged) ---
         document_text: list[str] = []
         progressive_output_path: Optional[str] = None
         previous_translated = ""
@@ -393,7 +503,8 @@ Do not provide any prompts to the user, for example: "This is the translation of
                            start_page: int, end_page: Optional[int],
                            source_language: str, target_language: str,
                            opts: OutputOptions = OutputOptions(),
-                           input_file_path: Optional[str] = None) -> List[str]:
+                           input_file_path: Optional[str] = None,
+                           workers: int = 1) -> List[str]:
         """Translate all pages in a document."""
         output_format = self._resolve_output_format(opts)
         pages = islice(pages, start_page, None if end_page is None else end_page + 1)
@@ -407,12 +518,14 @@ Do not provide any prompts to the user, for example: "This is the translation of
             unit_label='page',
             opts=opts,
             input_file_path=input_file_path,
+            workers=workers,
         )
     
     def translate_text_pages(self, text_pages: List[str], abstract_text: Optional[str],
                             source_language: str, target_language: str,
                             opts: OutputOptions = OutputOptions(),
-                            input_file_path: Optional[str] = None) -> List[str]:
+                            input_file_path: Optional[str] = None,
+                            workers: int = 1) -> List[str]:
         """Translate pre-extracted text pages (e.g., from Word documents)."""
         output_format = self._resolve_output_format(opts)
         return self._translate_page_sequence(
@@ -425,4 +538,5 @@ Do not provide any prompts to the user, for example: "This is the translation of
             unit_label='section',
             opts=opts,
             input_file_path=input_file_path,
+            workers=workers,
         )
