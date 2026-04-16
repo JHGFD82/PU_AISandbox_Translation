@@ -212,17 +212,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
             timeout_msg="Translation returned no content after maximum retries.",
             return_signal_on_error=True,
         )
-    
-    @staticmethod
-    def _resolve_output_format(opts: OutputOptions) -> str:
-        """Derive the output format string from the requested output file path and auto-save flag."""
-        if opts.output_file:
-            ext = opts.output_file.lower().rsplit('.', 1)[-1] if '.' in opts.output_file else ''
-            format_map = {'pdf': 'pdf', 'docx': 'docx', 'txt': 'txt'}
-            return format_map.get(ext, 'file')
-        if opts.auto_save:
-            return 'txt'
-        return 'console'
 
     def translate_page_text(self, abstract_text: str, page_text: str, previous_page: str, 
                           source_language: str, target_language: str, output_format: str = "console",
@@ -516,6 +505,17 @@ Do not provide any prompts to the user, for example: "This is the translation of
             print(f"\nProgressive translation saved to: {progressive_output_path}")
 
         return document_text
+
+    @staticmethod
+    def _resolve_output_format(opts: OutputOptions) -> str:
+        """Derive the output format string from the requested output file path and auto-save flag."""
+        if opts.output_file:
+            ext = opts.output_file.lower().rsplit('.', 1)[-1] if '.' in opts.output_file else ''
+            format_map = {'pdf': 'pdf', 'docx': 'docx', 'txt': 'txt'}
+            return format_map.get(ext, 'file')
+        if opts.auto_save:
+            return 'txt'
+        return 'console'
 
     def translate_document(self, pages: Iterable[PDFPage], abstract_text: Optional[str],
                            start_page: int, end_page: Optional[int],
