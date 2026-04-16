@@ -21,7 +21,7 @@ from ..models import (
 )
 from .api_errors import APISignal
 from .base_service import BaseService
-from .parallel_utils import tqdm_logging
+from .parallel_utils import tqdm_logging, update_pbar_postfix
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text, detect_numbered_content
 from ..tracking.token_tracker import TokenTracker
@@ -416,12 +416,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                                 with open(tmp_path, "w", encoding="utf-8") as f:
                                     f.write(error_msg)
                                 tmp_paths[idx] = tmp_path
-                            try:
-                                run_tokens = int(self.token_tracker.usage_data["total_usage"].get("total_tokens", 0)) - int(baseline_tokens)
-                                run_cost = float(self.token_tracker.usage_data["total_usage"].get("total_cost", 0.0)) - float(baseline_cost)
-                                pbar.set_postfix(tokens=f"{run_tokens:,}", cost=f"${run_cost:.4f}")
-                            except (TypeError, ValueError):
-                                pass
+                            update_pbar_postfix(pbar, self.token_tracker.usage_data, baseline_tokens, baseline_cost)
                             pbar.update(1)
 
             # Assemble results in original page order
