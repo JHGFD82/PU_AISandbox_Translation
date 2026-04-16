@@ -17,6 +17,7 @@ class TranslationPromptSpec:
     target_language: str
     output_format: str = "console"
     has_numbered: bool = False
+    kanbun: bool = False
     system_note: Optional[str] = None
     user_note: Optional[str] = None
 
@@ -38,6 +39,8 @@ class TranslationPromptSpec:
         pair_note = self._pair_note()
         if pair_note:
             sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=pair_note))
+        if self.kanbun:
+            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=F.KANBUN_NOTE))
         if self.system_note:
             sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note))
         return "\n\n".join(sections)

@@ -46,6 +46,7 @@ class TranslationService(BaseService):
         self.pdf_processor = PDFProcessor()
         # Set to True in parallel mode to suppress per-page console output
         self._suppress_inline_print: bool = False
+        self.kanbun: bool = False
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
@@ -79,6 +80,7 @@ class TranslationService(BaseService):
             target_language=target_language,
             output_format=output_format,
             has_numbered=has_numbered,
+            kanbun=self.kanbun,
             system_note=self.system_note,
             user_note=self.user_note,
         )
