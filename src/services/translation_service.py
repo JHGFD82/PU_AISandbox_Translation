@@ -21,6 +21,7 @@ from ..models import (
 )
 from .api_errors import APISignal
 from .base_service import BaseService
+from .parallel_utils import tqdm_logging
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text, detect_numbered_content
 from ..tracking.token_tracker import TokenTracker
@@ -400,25 +401,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
                 baseline_tokens = self.token_tracker.usage_data["total_usage"].get("total_tokens", 0)
                 baseline_cost = self.token_tracker.usage_data["total_usage"].get("total_cost", 0.0)
 
-                class _TqdmLoggingHandler(logging.Handler):
-                    def emit(self, record: logging.LogRecord) -> None:
-                        try:
-                            tqdm.write(self.format(record))
-                        except Exception:
-                            self.handleError(record)
-
-                root_logger = logging.getLogger()
-                tqdm_handler = _TqdmLoggingHandler()
-                tqdm_handler.setFormatter(logging.Formatter(
-                    fmt="%(asctime)s - %(levelname)s - %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S,%f"[:-3],
-                ))
-                existing_handlers = root_logger.handlers[:]
-                for h in existing_handlers:
-                    root_logger.removeHandler(h)
-                root_logger.addHandler(tqdm_handler)
-
-                try:
+                with tqdm_logging():
                     with tqdm(total=n_pages, desc=desc, ascii=True) as pbar:
                         for future in as_completed(futures):
                             idx = futures[future]
@@ -440,10 +423,6 @@ Do not provide any prompts to the user, for example: "This is the translation of
                             except (TypeError, ValueError):
                                 pass
                             pbar.update(1)
-                finally:
-                    root_logger.removeHandler(tqdm_handler)
-                    for h in existing_handlers:
-                        root_logger.addHandler(h)
 
             # Assemble results in original page order
             document_text: list[str] = []
