@@ -373,6 +373,11 @@ Do not provide any prompts to the user, for example: "This is the translation of
         tmpdir = tempfile.mkdtemp(prefix="pu_sandbox_translate_")
         tmp_paths: Dict[int, str] = {}
 
+        # Warm the pricing cache on the main thread before workers are dispatched.
+        # Without this, all workers start simultaneously with an empty cache and
+        # each independently fetches + logs the pricing sync.
+        self._get_model()
+
         def _translate_one(index: int, page_text: str, previous_page: str) -> tuple[int, str]:
             translated = self.generate_text(
                 abstract_text, page_text, previous_page, index,
