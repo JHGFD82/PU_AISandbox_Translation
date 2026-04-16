@@ -392,19 +392,29 @@ Do not provide any prompts to the user, for example: "This is the translation of
                     futures[future] = idx
 
                 desc = f"Translating ({actual_workers} workers)... "
-                for future in tqdm(as_completed(futures), total=n_pages, desc=desc, ascii=True):
-                    idx = futures[future]
-                    try:
-                        _, tmp_path = future.result()
-                        tmp_paths[idx] = tmp_path
-                    except Exception as e:
-                        error_msg = f"\n***Translation error on {unit_label} {idx + 1}: {e}***\n"
-                        print(f"Error on {unit_label} {idx + 1}: {e}")
-                        logging.error(f"Parallel worker error on {unit_label} {idx + 1}: {e}")
-                        tmp_path = os.path.join(tmpdir, f"page_{idx:06d}.tmp")
-                        with open(tmp_path, "w", encoding="utf-8") as f:
-                            f.write(error_msg)
-                        tmp_paths[idx] = tmp_path
+                baseline_tokens = self.token_tracker.usage_data["total_usage"].get("total_tokens", 0)
+                baseline_cost = self.token_tracker.usage_data["total_usage"].get("total_cost", 0.0)
+                with tqdm(total=n_pages, desc=desc, ascii=True) as pbar:
+                    for future in as_completed(futures):
+                        idx = futures[future]
+                        try:
+                            _, tmp_path = future.result()
+                            tmp_paths[idx] = tmp_path
+                        except Exception as e:
+                            error_msg = f"\n***Translation error on {unit_label} {idx + 1}: {e}***\n"
+                            print(f"Error on {unit_label} {idx + 1}: {e}")
+                            logging.error(f"Parallel worker error on {unit_label} {idx + 1}: {e}")
+                            tmp_path = os.path.join(tmpdir, f"page_{idx:06d}.tmp")
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                f.write(error_msg)
+                            tmp_paths[idx] = tmp_path
+                        try:
+                            run_tokens = int(self.token_tracker.usage_data["total_usage"].get("total_tokens", 0)) - int(baseline_tokens)
+                            run_cost = float(self.token_tracker.usage_data["total_usage"].get("total_cost", 0.0)) - float(baseline_cost)
+                            pbar.set_postfix(tokens=f"{run_tokens:,}", cost=f"${run_cost:.4f}")
+                        except (TypeError, ValueError):
+                            pass
+                        pbar.update(1)
 
             # Assemble results in original page order
             document_text: list[str] = []
