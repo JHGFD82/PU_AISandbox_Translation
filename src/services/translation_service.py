@@ -26,14 +26,12 @@ from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text, detect_numbered_content
 from ..tracking.token_tracker import TokenTracker
 from .constants import PAGE_DELAY_SECONDS
-
-# Translation API parameters
-TRANSLATION_TEMPERATURE: float = 0.5
-TRANSLATION_MAX_TOKENS: int = 4000  # Large enough for academic content with footnotes
-TRANSLATION_TOP_P: float = 0.5
-
-# Fraction of the previous page passed as context to the next translation call
-CONTEXT_PERCENTAGE: float = 0.65
+from ..settings import (
+    TRANSLATION_TEMPERATURE,
+    TRANSLATION_MAX_TOKENS,
+    TRANSLATION_TOP_P,
+    CONTEXT_PERCENTAGE,
+)
 
 # Regex pattern for matching citation/reference numbers in CJK and ASCII brackets
 _CITATION_NUM_RE: str = r'[（\(](\d+)[）\)]'

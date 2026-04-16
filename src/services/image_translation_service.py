@@ -15,9 +15,7 @@ from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
 from .constants import MAX_RETRIES, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
 
-# Combined OCR + translation token budget
-IMAGE_TRANSLATION_MAX_TOKENS: int = 8000  # Overridden per-model via max_completion_tokens in catalog
-IMAGE_TRANSLATION_TEMPERATURE: float = 0.3
+from ..settings import IMAGE_TRANSLATION_MAX_TOKENS, IMAGE_TRANSLATION_TEMPERATURE
 
 
 class ImageTranslationService(BaseService):
