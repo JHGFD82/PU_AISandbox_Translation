@@ -8,6 +8,7 @@ from typing import Any, Optional
 from ..models import (
     get_model_system_role, model_supports_vision, get_vision_capable_models,
     get_model_max_completion_tokens, resolve_model, get_default_model,
+    maybe_sync_model_pricing,
 )
 from .base_service import BaseService
 from ..processors.image_processor import ImageProcessor
@@ -44,6 +45,8 @@ class ImageTranslationService(BaseService):
     ):
         super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p, max_tokens)
         self.image_processor = ImageProcessor()
+        # Set to True in parallel mode to suppress per-image console output
+        self._suppress_inline_print: bool = False
 
     def _get_model(self) -> str:
         """Get model to use, preferring the catalog image_translation default."""
@@ -53,6 +56,7 @@ class ImageTranslationService(BaseService):
             prefer_model=img_trans_default,
             require_vision=True,
         )
+        maybe_sync_model_pricing(model)
         if not self.custom_model and model != img_trans_default:
             logging.warning(
                 f"Preferred image translation model '{img_trans_default}' not available. "
