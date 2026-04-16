@@ -13,7 +13,8 @@ from ..models import (
 from .base_service import BaseService
 from ..processors.image_processor import ImageProcessor
 from ..tracking.token_tracker import TokenTracker
-from .constants import MAX_RETRIES, IMAGE_TRANSLATION_SCRIPT_GUIDANCE
+from .constants import MAX_RETRIES
+from .prompts import ImageTranslationPromptSpec
 
 from ..settings import IMAGE_TRANSLATION_MAX_TOKENS, IMAGE_TRANSLATION_TEMPERATURE
 
@@ -69,62 +70,34 @@ class ImageTranslationService(BaseService):
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
     def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
-        script_note = IMAGE_TRANSLATION_SCRIPT_GUIDANCE.get(source_language, "")
-        script_section = f"\nSCRIPT NOTES:\n{script_note}\n" if script_note else ""
-        vertical_section = (
-            "\nTEXT ORIENTATION:\n"
-            "The majority of text in this image is vertical — written top-to-bottom, "
-            "with columns ordered right-to-left. Read each column from top to bottom, "
-            "proceeding from the rightmost column to the leftmost.\n"
-        ) if vertical else ""
-        return f"""You are an expert reader and translator specialising in {source_language} text found in images.
-{script_section}{vertical_section}
-Your task is to perform two operations on the image:
-1. TRANSCRIBE all visible {source_language} text exactly as it appears.
-2. TRANSLATE that transcribed text into fluent, accurate {target_language}.
-
-You MUST return your response in EXACTLY this format, with the section headers on their own lines:
-
-[TRANSCRIPT]
-<transcribed {source_language} text, preserving original layout and line breaks>
-
-[TRANSLATION]
-<{target_language} translation of the transcribed text>
-
-TRANSCRIPTION RULES:
-- Reproduce text exactly as it appears in the image — do not correct, modernise, or alter characters.
-- Preserve line breaks, punctuation, numbering, and overall structure.
-- Use surrounding context and translation target to resolve ambiguous or partially obscured characters; \
-mark genuinely unreadable text with [unclear] inline rather than a trailing summary.
-- Do not skip any text, including headers, captions, inscriptions, or marginal notes.
-
-TRANSLATION RULES:
-- Produce a fluent, scholarly {target_language} translation.
-- Preserve the structure of the original (line breaks, stanzas, numbered items, etc.).
-- For classical or archaic language, prefer a literary translation over a literal one.
-- Do not add explanatory notes, commentary, or translator remarks."""
+        spec = ImageTranslationPromptSpec(
+            source_language=source_language,
+            target_language=target_language,
+            vertical=vertical,
+        )
+        return spec.system_prompt()
 
     def _build_user_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
-        vertical_note = " The text is predominantly vertical (top-to-bottom, right-to-left columns)." if vertical else ""
-        return (
-            f"Transcribe all visible {source_language} text from this image exactly as it appears,"
-            f"{vertical_note} then translate it to {target_language}."
+        spec = ImageTranslationPromptSpec(
+            source_language=source_language,
+            target_language=target_language,
+            vertical=vertical,
         )
+        return spec.user_prompt()
 
     def build_prompts(self, source_language: str, target_language: str, vertical: bool = False) -> tuple[str, str]:
         """Return (system_prompt, user_prompt) without calling the API.
 
         Used by --dry-run mode to preview what would be sent to the model.
         """
-        system_prompt = self._build_system_prompt(source_language, target_language, vertical=vertical)
-        user_prompt = self._build_user_prompt(source_language, target_language, vertical=vertical)
-
-        if self.system_note:
-            system_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{self.system_note}"
-        if self.user_note:
-            user_prompt += f"\n\nADDITIONAL NOTES:\n{self.user_note}"
-
-        return system_prompt, user_prompt
+        spec = ImageTranslationPromptSpec(
+            source_language=source_language,
+            target_language=target_language,
+            vertical=vertical,
+            system_note=self.system_note,
+            user_note=self.user_note,
+        )
+        return spec.system_prompt(), spec.user_prompt()
 
     def _call_api(
         self,

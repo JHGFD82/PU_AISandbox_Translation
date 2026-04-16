@@ -22,6 +22,7 @@ from ..models import (
 from .api_errors import APISignal
 from .base_service import BaseService
 from .parallel_utils import tqdm_logging, update_pbar_postfix
+from .prompts import TranslationPromptSpec
 from ..output.file_output import FileOutputHandler
 from ..processors.pdf_processor import PDFProcessor, generate_process_text, detect_numbered_content
 from ..tracking.token_tracker import TokenTracker
@@ -71,108 +72,17 @@ class TranslationService(BaseService):
     
     def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console", text: str = "") -> tuple[str, str]:
         """Create system and user prompt templates for translation."""
-        
         has_numbered = detect_numbered_content(text) if text else False
         logging.debug(f"Numbered content detected: {has_numbered}")
-
-        formatting_instruction = self._get_formatting_instruction(output_format)
-        numbered_content_instruction = self._get_numbered_content_instruction() if has_numbered else ""
-        
-        system_prompt = self._build_system_prompt(
-            source_language, target_language, formatting_instruction, numbered_content_instruction
+        spec = TranslationPromptSpec(
+            source_language=source_language,
+            target_language=target_language,
+            output_format=output_format,
+            has_numbered=has_numbered,
+            system_note=self.system_note,
+            user_note=self.user_note,
         )
-        
-        user_prompt_template = self._build_user_prompt_template(source_language, target_language, has_numbered)
-
-        if self.system_note:
-            system_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{self.system_note}"
-        if self.user_note:
-            user_prompt_template += f"ADDITIONAL NOTES:\n{self.user_note}\n\n"
-
-        return system_prompt, user_prompt_template
-    
-    def _get_formatting_instruction(self, output_format: str) -> str:
-        """Get formatting instructions based on output format."""
-        if output_format.lower() in ["pdf", "txt", "file", "docx"]:
-            return (
-                "Use proper paragraph breaks and standard text formatting suitable for file output. "
-                "Use actual line breaks (not \\n characters) to separate paragraphs and sections naturally."
-            )
-        else:  # console output
-            return 'You can format and line break the output yourself using "\\n" for line breaks in console output.'
-    
-    def _get_numbered_content_instruction(self) -> str:
-        """Get comprehensive instructions for handling numbered content."""
-        return """IMPORTANT: Pay special attention to numbered lists, citations, and footnotes.
-Preserve ALL numbering exactly as it appears in the source text. This includes:
-• Arabic numerals: 1, 2, 3... or 1), 2), 3)...
-• Numbers in brackets: [1], [2], [3]... or (1), (2), (3)...
-• Chinese numerals: 一、二、三... or （一）、（二）、（三）...
-• Japanese/Korean numbering: ①, ②, ③... or １、２、３...
-• Japanese reference format: 14　author「title」→ should become "14. Author, 'Title'"
-
-CRITICAL DISTINCTION - DO NOT ADD NUMBERING:
-
-- If the source text has section headings WITHOUT numbers, do NOT add numbers to them
-- Only preserve numbering that already exists in the source
-- Section titles like "背景" or "結論" should remain as "Background" or "Conclusion" without numbers
-
-CRITICAL FOR BIBLIOGRAPHY/REFERENCES: If you encounter numbered reference lists or bibliography 
-(like "1. Author Title, Publisher" format), preserve the exact numbering format. Do NOT convert 
-numbered references into paragraph form. Keep each reference as a separate numbered item.
-
-CRITICAL: When you see Japanese reference format like "14　松下安雄監修樋垣元良「福岡藩」", 
-translate it to proper English reference format like "14. Supervised by Matsushita Yasuo, Higaki Motoyoshi, 'Fukuoka Domain'". 
-DO NOT output just the number "14" by itself - always include the full reference text with proper formatting."""
-    
-    def _build_system_prompt(self, source_language: str, target_language: str, 
-                           formatting_instruction: str, numbered_content_instruction: str) -> str:
-        """Build the complete system prompt."""
-        return f"""Follow the instructions carefully. Please act as a professional translator from {source_language} 
-to {target_language}. I will provide you with text from a document, and your task is 
-to translate it from {source_language} to {target_language}. Please only output the translation and do not 
-output any irrelevant content. If there are garbled characters or other non-standard text 
-content, delete the garbled characters.
-
-{formatting_instruction}
-
-{numbered_content_instruction}
-
-You may be provided with "--Context: " which includes either the document's abstract or 
-text from the previous page for context. You will also be provided with "--Current Page: " 
-which includes the text of the current page. Only output the {target_language} translation of 
-the "--Current Page: ". Do not output the context, nor the "--Context: " and "--Current Page: " 
-labels."""
-    
-    def _build_user_prompt_template(self, source_language: str, target_language: str, has_numbered: bool = False) -> str:
-        """Build the user prompt template."""
-        numbered_sections = ""
-        if has_numbered:
-            numbered_sections = f"""\nCRITICAL: Preserve all numbering systems exactly as they appear in the source (1, 2, 3... or [1], [2]... or ①, ②... etc.).
-DO NOT ADD numbering to headings or sections that are not numbered in the source text.
-
-CRITICAL FOR REFERENCES: When translating reference entries like "14　松下安雄監修樋垣元良「福岡藩」", 
-translate the COMPLETE reference including author names, titles, and formatting. Output should be 
-"14. Author Name, 'Title'" NOT just the isolated number "14". Always translate the full reference text.
-
-NUMBERING CONTINUATION - VERY IMPORTANT: 
-- If the context shows "Previous numbering ended with: X. Reference", you MUST continue numbering from X+1 for any new numbered items on the current page.
-- Do NOT restart numbering from 1 - always continue the sequence from the previous page.
-- Example: If context shows "Previous numbering ended with: 25. Some Reference", and current page has more numbered items, they should be numbered 26, 27, 28, etc.
-- This applies ONLY to numbered reference lists, NOT to section headings.
-
-SECTION HEADINGS: If the source has section headings without numbers, translate them as headings without adding numbers.
-"""
-
-        return f"""Translate only the {source_language} text of the "--Current Page: " to {target_language}, without outputting any other 
-content, and without outputting anything related to "--Context: ", if provided.
-{numbered_sections}
-IMPORTANT: Only add a "Footnotes:" section if there is actual explanatory footnote text at the bottom 
-of the page. Do NOT add "Footnotes:" for simple citation numbers like (38), (39) within paragraphs.
-
-Do not provide any prompts to the user, for example: "This is the translation of the current page.":
-
-"""
+        return spec.system_prompt(), spec.user_prompt()
     
     def build_prompts(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
         """Return (system_prompt, user_prompt) for the given text without calling the API.
