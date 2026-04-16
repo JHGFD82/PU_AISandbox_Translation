@@ -44,6 +44,8 @@ class TranslationService(BaseService):
     def __init__(self, api_key: str, professor: Optional[str] = None, token_tracker: Optional[TokenTracker] = None, token_tracker_file: Optional[str] = None, model: Optional[str] = None, temperature: Optional[float] = None, top_p: Optional[float] = None, max_tokens: Optional[int] = None):
         super().__init__(api_key, professor, token_tracker, token_tracker_file, model, temperature, top_p, max_tokens)
         self.pdf_processor = PDFProcessor()
+        # Set to True in parallel mode to suppress per-page console output
+        self._suppress_inline_print: bool = False
     
     def _get_model(self) -> str:
         """Get the model to use, preferring custom model if specified."""
@@ -195,10 +197,12 @@ Do not provide any prompts to the user, for example: "This is the translation of
             if response.choices and len(response.choices) > 0 and response.choices[0].message:
                 content = response.choices[0].message.content
                 if content is not None and isinstance(content, str):
-                    print("\n" + content)
+                    if not self._suppress_inline_print:
+                        print("\n" + content)
                     return content
                 return None  # content was None or wrong type — retry
-            print("\n[No content returned by the model]")
+            if not self._suppress_inline_print:
+                print("\n[No content returned by the model]")
             logging.warning('No content returned by the model.')
             return ""  # terminal empty result
 
@@ -352,6 +356,7 @@ Do not provide any prompts to the user, for example: "This is the translation of
         """
         n_pages = len(all_triples)
         actual_workers = min(workers, n_pages)
+        self._suppress_inline_print = True
 
         if opts.progressive_save:
             print(
