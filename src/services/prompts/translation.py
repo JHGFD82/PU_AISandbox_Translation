@@ -24,6 +24,9 @@ class TranslationPromptSpec:
         key = "file" if self.output_format.lower() in ("pdf", "txt", "file", "docx") else "console"
         return F.TRANSLATION_FORMATTING[key]
 
+    def _pair_note(self) -> str:
+        return F.LANGUAGE_PAIR_NOTES.get((self.source_language, self.target_language), "")
+
     def system_prompt(self) -> str:
         sections = [
             F.TRANSLATION_ROLE.format(source=self.source_language, target=self.target_language),
@@ -32,6 +35,9 @@ class TranslationPromptSpec:
         if self.has_numbered:
             sections.append(F.TRANSLATION_NUMBERED_SYSTEM)
         sections.append(F.TRANSLATION_CONTEXT_SPEC.format(target=self.target_language))
+        pair_note = self._pair_note()
+        if pair_note:
+            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=pair_note))
         if self.system_note:
             sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note))
         return "\n\n".join(sections)
