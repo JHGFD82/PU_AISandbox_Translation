@@ -17,6 +17,7 @@ class TranslationPromptSpec:
     target_language: str
     output_format: str = "console"
     has_numbered: bool = False
+    context_type: str = "none"  # "none" | "abstract" | "previous_page"
     kanbun: bool = False
     system_note: Optional[str] = None
     user_note: Optional[str] = None
@@ -28,6 +29,13 @@ class TranslationPromptSpec:
     def _pair_note(self) -> str:
         return F.LANGUAGE_PAIR_NOTES.get((self.source_language, self.target_language), "")
 
+    def _context_spec(self) -> str:
+        if self.context_type == "abstract":
+            return F.TRANSLATION_CONTEXT_SPEC_ABSTRACT.format(target=self.target_language)
+        if self.context_type == "previous_page":
+            return F.TRANSLATION_CONTEXT_SPEC_PREVIOUS.format(target=self.target_language)
+        return F.TRANSLATION_CONTEXT_SPEC_NONE.format(target=self.target_language)
+
     def system_prompt(self) -> str:
         sections = [
             F.TRANSLATION_ROLE.format(source=self.source_language, target=self.target_language),
@@ -35,7 +43,7 @@ class TranslationPromptSpec:
         ]
         if self.has_numbered:
             sections.append(F.TRANSLATION_NUMBERED_SYSTEM)
-        sections.append(F.TRANSLATION_CONTEXT_SPEC.format(target=self.target_language))
+        sections.append(self._context_spec())
         pair_note = self._pair_note()
         if pair_note:
             sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=pair_note))
@@ -46,11 +54,15 @@ class TranslationPromptSpec:
         return "\n\n".join(sections)
 
     def user_prompt(self) -> str:
-        parts = [
-            F.TRANSLATION_USER_BASE.format(
+        if self.context_type != "none":
+            base = F.TRANSLATION_USER_BASE_WITH_CONTEXT.format(
                 source=self.source_language, target=self.target_language
             )
-        ]
+        else:
+            base = F.TRANSLATION_USER_BASE.format(
+                source=self.source_language, target=self.target_language
+            )
+        parts = [base]
         if self.has_numbered:
             parts.append(F.TRANSLATION_NUMBERED_USER)
         parts.append(F.TRANSLATION_FOOTNOTE_RULE)

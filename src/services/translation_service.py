@@ -71,7 +71,7 @@ class TranslationService(BaseService):
             temperature=temperature, top_p=top_p,
         )
     
-    def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console", text: str = "") -> tuple[str, str]:
+    def _create_translation_prompt(self, source_language: str, target_language: str, output_format: str = "console", text: str = "", context_type: str = "none") -> tuple[str, str]:
         """Create system and user prompt templates for translation."""
         has_numbered = detect_numbered_content(text) if text else False
         logging.debug(f"Numbered content detected: {has_numbered}")
@@ -80,24 +80,25 @@ class TranslationService(BaseService):
             target_language=target_language,
             output_format=output_format,
             has_numbered=has_numbered,
+            context_type=context_type,
             kanbun=self.kanbun,
             system_note=self.system_note,
             user_note=self.user_note,
         )
         return spec.system_prompt(), spec.user_prompt()
     
-    def build_prompts(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> tuple[str, str]:
+    def build_prompts(self, text: str, source_language: str, target_language: str, output_format: str = "console", context_type: str = "none") -> tuple[str, str]:
         """Return (system_prompt, user_prompt) for the given text without calling the API.
 
         Used by --dry-run mode to preview what would be sent to the model.
         """
-        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text)
+        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text, context_type=context_type)
         return system_prompt, user_prompt_template + text
 
-    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console") -> "str | APISignal":
+    def translate_text(self, text: str, source_language: str, target_language: str, output_format: str = "console", context_type: str = "none") -> "str | APISignal":
         """Translate text using the specified model with retry logic for content filters."""
         model = self._get_model()
-        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text)
+        system_prompt, user_prompt_template = self._create_translation_prompt(source_language, target_language, output_format, text, context_type=context_type)
         user_prompt = user_prompt_template + text
 
         def body(attempt: int) -> Any:
@@ -127,8 +128,9 @@ class TranslationService(BaseService):
                           source_language: str, target_language: str, output_format: str = "console",
                           previous_translated: str = "") -> str:
         """Translate page text with context."""
+        context_type = "abstract" if abstract_text else ("previous_page" if previous_page else "none")
         process_text = generate_process_text(abstract_text, page_text, previous_page, CONTEXT_PERCENTAGE, previous_translated)
-        return self.translate_text(process_text, source_language, target_language, output_format)
+        return self.translate_text(process_text, source_language, target_language, output_format, context_type=context_type)
 
     @staticmethod
     def _find_split_point(text: str, middle_index: int) -> int:
