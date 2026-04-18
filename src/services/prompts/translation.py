@@ -37,38 +37,30 @@ class TranslationPromptSpec:
         return F.TRANSLATION_CONTEXT_SPEC_NONE.format(target=self.target_language)
 
     def system_prompt(self) -> str:
+        pair_note = self._pair_note()
         sections = [
             F.TRANSLATION_ROLE.format(source=self.source_language, target=self.target_language),
             self._formatting_fragment(),
+            F.TRANSLATION_NUMBERED_SYSTEM if self.has_numbered else None,
+            self._context_spec(),
+            F.ADDITIONAL_INSTRUCTIONS.format(note=pair_note) if pair_note else None,
+            F.ADDITIONAL_INSTRUCTIONS.format(note=F.KANBUN_NOTE) if self.kanbun else None,
+            F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note) if self.system_note else None,
         ]
-        if self.has_numbered:
-            sections.append(F.TRANSLATION_NUMBERED_SYSTEM)
-        sections.append(self._context_spec())
-        pair_note = self._pair_note()
-        if pair_note:
-            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=pair_note))
-        if self.kanbun:
-            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=F.KANBUN_NOTE))
-        if self.system_note:
-            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note))
-        return "\n\n".join(sections)
+        return "\n\n".join(s for s in sections if s)
 
     def user_prompt(self) -> str:
-        if self.context_type != "none":
-            base = F.TRANSLATION_USER_BASE_WITH_CONTEXT.format(
-                source=self.source_language, target=self.target_language
-            )
-        else:
-            base = F.TRANSLATION_USER_BASE.format(
-                source=self.source_language, target=self.target_language
-            )
-        parts = [base]
-        if self.has_numbered:
-            parts.append(F.TRANSLATION_NUMBERED_USER)
-        parts.append(F.TRANSLATION_FOOTNOTE_RULE)
-        parts.append(F.TRANSLATION_NO_META_COMMENTARY)
-        if self.user_note:
-            parts.append(F.ADDITIONAL_NOTES.format(note=self.user_note))
+        base = (
+            F.TRANSLATION_USER_BASE_WITH_CONTEXT if self.context_type != "none"
+            else F.TRANSLATION_USER_BASE
+        ).format(source=self.source_language, target=self.target_language)
+        parts = [
+            base,
+            F.TRANSLATION_NUMBERED_USER if self.has_numbered else None,
+            F.TRANSLATION_FOOTNOTE_RULE,
+            F.TRANSLATION_NO_META_COMMENTARY,
+            F.ADDITIONAL_NOTES.format(note=self.user_note) if self.user_note else None,
+        ]
         # Trailing newline preserved for backward compatibility: the caller
         # concatenates the source text directly onto the end of this string.
-        return "\n\n".join(parts) + "\n\n"
+        return "\n\n".join(s for s in parts if s) + "\n\n"

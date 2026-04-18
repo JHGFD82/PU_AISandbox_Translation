@@ -23,26 +23,19 @@ class ImageTranslationPromptSpec:
         return F.IMAGE_TRANSLATION_SCRIPT_GUIDANCE.get(self.source_language, "")
 
     def system_prompt(self) -> str:
+        script_note = self._script_note()
         sections = [
             F.IMAGE_TRANSLATION_ROLE.format(source=self.source_language),
-        ]
-        script_note = self._script_note()
-        if script_note:
-            sections.append("SCRIPT NOTES:\n" + script_note)
-        if self.vertical:
-            sections.append(F.IMAGE_TRANSLATION_VERTICAL_BLOCK)
-        sections.append(
+            ("SCRIPT NOTES:\n" + script_note) if script_note else None,
+            F.IMAGE_TRANSLATION_VERTICAL_BLOCK if self.vertical else None,
             F.IMAGE_TRANSLATION_FORMAT_SPEC.format(
                 source=self.source_language, target=self.target_language
-            )
-        )
-        sections.append(F.IMAGE_TRANSLATION_TRANSCRIPTION_RULES)
-        sections.append(
-            F.IMAGE_TRANSLATION_TRANSLATION_RULES.format(target=self.target_language)
-        )
-        if self.system_note:
-            sections.append(F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note))
-        return "\n\n".join(sections)
+            ),
+            F.IMAGE_TRANSLATION_TRANSCRIPTION_RULES,
+            F.IMAGE_TRANSLATION_TRANSLATION_RULES.format(target=self.target_language),
+            F.ADDITIONAL_INSTRUCTIONS.format(note=self.system_note) if self.system_note else None,
+        ]
+        return "\n\n".join(s for s in sections if s)
 
     def user_prompt(self) -> str:
         vertical_note = F.IMAGE_TRANSLATION_VERTICAL_NOTE if self.vertical else ""
