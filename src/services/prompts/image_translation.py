@@ -16,6 +16,7 @@ class ImageTranslationPromptSpec:
     source_language: str
     target_language: str
     vertical: bool = False
+    spread: bool = False
     system_note: Optional[str] = None
     user_note: Optional[str] = None
 
@@ -28,6 +29,7 @@ class ImageTranslationPromptSpec:
             F.IMAGE_TRANSLATION_ROLE.format(source=self.source_language),
             ("SCRIPT NOTES:\n" + script_note) if script_note else None,
             F.IMAGE_TRANSLATION_VERTICAL_BLOCK if self.vertical else None,
+            F.IMAGE_TRANSLATION_SPREAD_NOTE if self.spread else None,
             F.IMAGE_TRANSLATION_FORMAT_SPEC.format(
                 source=self.source_language, target=self.target_language
             ),

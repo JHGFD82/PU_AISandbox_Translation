@@ -69,23 +69,25 @@ class ImageTranslationService(BaseService):
             return self.custom_max_tokens
         return get_model_max_completion_tokens(model, IMAGE_TRANSLATION_MAX_TOKENS)
 
-    def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
+    def _build_system_prompt(self, source_language: str, target_language: str, vertical: bool = False, spread: bool = False) -> str:
         spec = ImageTranslationPromptSpec(
             source_language=source_language,
             target_language=target_language,
             vertical=vertical,
+            spread=spread,
         )
         return spec.system_prompt()
 
-    def _build_user_prompt(self, source_language: str, target_language: str, vertical: bool = False) -> str:
+    def _build_user_prompt(self, source_language: str, target_language: str, vertical: bool = False, spread: bool = False) -> str:
         spec = ImageTranslationPromptSpec(
             source_language=source_language,
             target_language=target_language,
             vertical=vertical,
+            spread=spread,
         )
         return spec.user_prompt()
 
-    def build_prompts(self, source_language: str, target_language: str, vertical: bool = False) -> tuple[str, str]:
+    def build_prompts(self, source_language: str, target_language: str, vertical: bool = False, spread: bool = False) -> tuple[str, str]:
         """Return (system_prompt, user_prompt) without calling the API.
 
         Used by --dry-run mode to preview what would be sent to the model.
@@ -94,6 +96,7 @@ class ImageTranslationService(BaseService):
             source_language=source_language,
             target_language=target_language,
             vertical=vertical,
+            spread=spread,
             system_note=self.system_note,
             user_note=self.user_note,
         )
@@ -153,6 +156,7 @@ class ImageTranslationService(BaseService):
         source_language: str,
         target_language: str,
         vertical: bool = False,
+        spread: bool = False,
     ) -> tuple[str, str]:
         """Transcribe and translate an image in a single API call.
 
@@ -161,6 +165,7 @@ class ImageTranslationService(BaseService):
             source_language: Language of text in the image (e.g. 'Chinese').
             target_language: Language to translate into (e.g. 'English').
             vertical: Whether the text is predominantly vertical (top-to-bottom, right-to-left).
+            spread: Whether the image is a two-page spread (two facing pages).
 
         Returns:
             (transcript, translation) — either may be empty if parsing fails.
@@ -179,7 +184,7 @@ class ImageTranslationService(BaseService):
             )
 
         system_role = get_model_system_role(model)
-        system_prompt, user_prompt = self.build_prompts(source_language, target_language, vertical=vertical)
+        system_prompt, user_prompt = self.build_prompts(source_language, target_language, vertical=vertical, spread=spread)
         max_tokens = self._get_max_tokens(model)
 
         try:
