@@ -55,6 +55,12 @@ def _register(module_name: str, rel_path: str) -> None:
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
 
+# Register plugin settings first so service modules can import from src.settings
+_register(
+    "pu_plugin.translation.settings",
+    "src/settings.py",
+)
+
 # Register in dependency order: fragments → specs → services
 _register(
     "src.services.prompts.translation_fragments",
