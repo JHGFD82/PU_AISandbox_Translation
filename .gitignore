@@ -1,0 +1,6 @@
+prompts.toml
+languages.toml
+settings.local.toml
+__pycache__/
+*.pyc
+.venv/

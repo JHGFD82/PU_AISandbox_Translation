@@ -1,0 +1,163 @@
+# prompts.toml — Translation plugin prompt fragment overrides
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO USE:
+#   1. Copy this file to prompts.toml in the PU_AISandbox repository root.
+#   2. Uncomment only the keys you want to override and replace the value.
+#   3. Leave all other keys absent — they fall back to the built-in defaults.
+#
+# prompts.toml is git-ignored and will not be committed.
+# Full default text for every key is in
+#   plugins/translation/src/services/prompts/translation_fragments.py
+#
+# PLACEHOLDERS: Some fragments contain {placeholder} tokens that are filled
+# in at runtime. If you override such a fragment, you must keep the same
+# placeholders or the prompt will be missing information.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [translation]
+# Fragments used when translating documents or custom text.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# [translation]
+
+# The role and overall task description sent to the model for every translation.
+# Placeholders: {source} (source language name), {target} (target language name)
+# role = """
+# Follow the instructions carefully. Please act as a professional translator from {source}
+# to {target}...
+# """
+
+# Instruction for how to handle the labeled input sections when no context is provided.
+# Placeholder: {target}
+# context_none = """
+# The input is labeled "--Current Page: ". Output only the {target} translation of that text.
+# Do not reproduce the "--Current Page: " label in your output.
+# """
+
+# Instruction when an abstract is provided as context.
+# Placeholder: {target}
+# context_abstract = """
+# The input has two labeled sections. "--Context: " contains the document abstract —
+# use it to inform the translation but do not translate or reproduce it.
+# "--Current Page: " is the text to translate.
+# Output only the {target} translation of "--Current Page: ".
+# Do not reproduce either label in your output.
+# """
+
+# Instruction when the end of the previous page is provided as context.
+# Placeholder: {target}
+# context_previous = """
+# The input has two labeled sections. "--Context: " contains the end of the previous page —
+# use it to maintain continuity but do not translate or reproduce it.
+# "--Current Page: " is the text to translate.
+# Output only the {target} translation of "--Current Page: ".
+# Do not reproduce either label in your output.
+# """
+
+# Formatting instruction injected when the output is being saved to a file.
+# formatting_file = "Use proper paragraph breaks and standard text formatting suitable for file output. Use actual line breaks (not \\n characters) to separate paragraphs and sections naturally."
+
+# Formatting instruction injected when the output is printed to the console.
+# formatting_console = 'You can format and line break the output yourself using "\\n" for line breaks in console output.'
+
+# The user-message base for translations without context.
+# Placeholders: {source}, {target}
+# user_base = 'Translate only the {source} text under "--Current Page: " to {target}, outputting only the translation with no other content.'
+
+# The user-message base for translations that include a context section.
+# Placeholders: {source}, {target}
+# user_base_with_context = """
+# Translate only the {source} text under "--Current Page: " to {target}.
+# Do not translate or reproduce the "--Context: " section.
+# Output only the translation with no other content.
+# """
+
+# Suppresses meta-commentary from the model (e.g. "This is the translation of...").
+# no_meta_commentary = 'Do not provide any prompts to the user, for example: "This is the translation of the current page.":'
+
+# Rule governing when to add a Footnotes section.
+# footnote_rule = """
+# IMPORTANT: Only add a "Footnotes:" section if there is actual explanatory footnote text
+# at the bottom of the page. Do NOT add "Footnotes:" for simple citation numbers like
+# (38), (39) within paragraphs.
+# """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [image_translation]
+# Fragments used when running combined image OCR + translation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# [image_translation]
+
+# The role sent to the model for image translation tasks.
+# Placeholders: {source}, {target}
+# role = "You are an expert reader and translator specialising in {source} text found in images."
+
+# Rules governing the transcription step of image translation.
+# transcription_rules = """
+# TRANSCRIPTION RULES:
+# - Reproduce text exactly as it appears in the image — do not correct, modernise, or alter characters.
+# - Preserve line breaks, punctuation, numbering, and overall structure.
+# ...
+# """
+
+# Rules governing the translation step of image translation.
+# Placeholder: {target}
+# translation_rules = """
+# TRANSLATION RULES:
+# - Produce a fluent, scholarly {target} translation.
+# - Preserve the structure of the original (line breaks, stanzas, numbered items, etc.).
+# - For classical or archaic language, prefer a literary translation over a literal one.
+# - Do not add explanatory notes, commentary, or translator remarks.
+# """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [language_pair_notes]
+# Pair-specific guidance injected into the translation system prompt when the
+# source → target language combination matches.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# [language_pair_notes]
+
+# Keys are "SourceLanguage|TargetLanguage" (exact full language names as they
+# appear in LANGUAGE_MAP, separated by a pipe character).  Both directions of
+# a pair should normally have entries.
+#
+# Built-in pairs (defined in translation_fragments.py; override or add here):
+#   Japanese|Korean, Korean|Japanese
+#
+# To add a new pair, uncomment and edit one of the examples below.
+
+# "Vietnamese|English" = """
+# Vietnamese uses a tonal Latin-alphabet writing system.  When translating to
+# English, preserve diacritics faithfully in any untranslated proper nouns
+# (e.g. Hà Nội, not Ha Noi).
+# """
+
+# "Arabic|English" = """
+# Arabic is written right-to-left.  Transliterate proper nouns using the
+# Library of Congress romanisation standard unless a well-known English form
+# exists (e.g. Cairo, not al-Qāhirah).
+# """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [image_translation_script_guidance]
+# Script-specific notes injected into image-translation system prompts.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# [image_translation_script_guidance]
+
+# Keys are exact source language names.
+# Built-in languages (defined in translation_fragments.py; override or add here):
+#   Chinese, Simplified Chinese, Traditional Chinese, Japanese, Korean, English
+
+# "Vietnamese" = """
+# The source text uses the Vietnamese Latin-based script (Chữ Quốc ngữ).
+# All tonal and vowel diacritics are semantically significant — transcribe
+# them exactly before translating.
+# """
