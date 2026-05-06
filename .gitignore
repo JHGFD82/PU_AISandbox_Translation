@@ -2,5 +2,9 @@ prompts.toml
 languages.toml
 settings.local.toml
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.env
+.env.local
 .venv/
+venv/
