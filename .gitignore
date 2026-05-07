@@ -8,3 +8,9 @@ __pycache__/
 .env.local
 .venv/
 venv/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+junit.xml
