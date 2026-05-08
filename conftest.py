@@ -1,16 +1,16 @@
 """
-Pytest configuration for the translation plugin.
+Pytest configuration for the translation-ea plugin.
 
 Ensures the PU_AISandbox repo root is on sys.path so that src.* imports
 (src.cli, src.runtime.plugin_loader, etc.) resolve when pytest is run from
-this plugin's directory (plugins/translation/).
+this plugin's directory (plugins/translation-ea/).
 """
 
 import sys
 from pathlib import Path
 
-# This file lives at plugins/translation/conftest.py.
-# parents[0] = plugins/translation/
+# This file lives at plugins/translation-ea/conftest.py.
+# parents[0] = plugins/translation-ea/
 # parents[1] = plugins/
 # parents[2] = PU_AISandbox/  ← main repo root
 _REPO_ROOT = Path(__file__).resolve().parents[2]

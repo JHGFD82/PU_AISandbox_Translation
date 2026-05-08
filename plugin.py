@@ -1,25 +1,38 @@
-"""PU_AISandbox Translation plugin.
+"""PU_AISandbox East Asia Translation plugin.
 
-Provides the ``translate`` command (documents, custom text, and images).
-Clone this repo into ``plugins/translation/`` in the main PU_AISandbox repo.
+Provides ``translate`` support for East Asian source languages (Japanese,
+Chinese, Korean).  Requires the base translation plugin (plugins/translation/)
+to be present in the same PU_AISandbox installation — the base plugin owns
+the shared service layer (TranslationService, ImageTranslationService, and
+all prompt specs) and must load first.
 
-ARCHITECTURE — sys.modules injection
---------------------------------------
-``_register()`` (called at import time) injects each extracted service module
-into ``sys.modules`` under the same ``src.services.*`` name it had in the main
-repo.  This is the mechanism that keeps everything importable after the service
-files are removed from the main repo's ``src/`` directory (Phase 4 Step 5).
+Clone this repo into ``plugins/translation-ea/`` inside the PU_AISandbox repo.
 
-For the injection to take effect *before* sandbox_processor.py's top-level
-imports run, Phase 4 Step 6 must make those imports lazy (deferred to
-``__init__`` or wrapped in ``try/except``).
+DISPATCH MODEL
+--------------
+When both this plugin and the base translation plugin are loaded, the plugin
+loader detects that both register ``translate`` and both declare ``handles``.
+Rather than treating this as a conflict, it merges them into a DispatchPlugin
+that routes each invocation to the plugin owning the source language:
 
-run() — delegation pattern
------------------------------
-``run()`` currently delegates to ``SandboxProcessor._run_translate()``.  This
-will be replaced in Phase 4 Step 6 when the translate dispatch logic is moved
-from SandboxProcessor into this plugin (so the main repo no longer needs the
-translation-specific _run_translate method).
+  translate J-E  → this plugin owns Japanese, drives translation
+  translate E-J  → base plugin owns English, drives translation;
+                   this plugin contributes Japanese destination guidance
+  translate J-F  → this plugin drives; French plugin (if loaded) contributes
+                   destination guidance; no French plugin → proceeds without it
+
+EA-SPECIFIC FEATURES
+--------------------
+  --kanbun   Source text is kanbun (漢文): apply kundoku word-order
+             reconstruction and classical Chinese reading conventions.
+             Appends KANBUN_NOTE (from fragments.py) to variant_notes on the
+             translation service before delegating to the shared executor.
+
+FRAGMENT REGISTRATION
+---------------------
+At import time this plugin loads fragments.py and registers East Asia script
+guidance and language-pair notes into the base plugin's translation_fragments
+module (via setdefault() so user prompts.toml overrides are respected).
 """
 
 from __future__ import annotations
@@ -30,177 +43,153 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# ── Module registration (must run at import time) ────────────────────────────
+# ── Plugin directory ──────────────────────────────────────────────────────────
 
 _PLUGIN_DIR = Path(__file__).parent
 
 
-def _register(module_name: str, rel_path: str) -> None:
-    """Inject a plugin module into sys.modules under the src.* namespace.
+# ── EA-internal module loader ─────────────────────────────────────────────────
 
-    If the module is already present (main repo's version loaded first), the
-    registration is skipped.  After Phase 4 Step 5 (main repo files deleted)
-    and Step 6 (sandbox_processor imports made lazy), this becomes the only
-    source for these modules.
+def _load_ea_module(name: str, rel_path: str):
+    """Load a module local to this plugin and register it in sys.modules.
+
+    Returns the loaded module, or None if the file does not exist.
     """
-    if module_name in sys.modules:
-        return
+    if name in sys.modules:
+        return sys.modules[name]
     path = _PLUGIN_DIR / rel_path
     if not path.exists():
-        return
-    spec = importlib.util.spec_from_file_location(module_name, path)
+        return None
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec and spec.loader:
         mod = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = mod
+        sys.modules[name] = mod
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+    return None
 
 
-# Register plugin settings first so service modules can import from src.settings
-_register(
-    "pu_plugin.translation.settings",
-    "src/settings.py",
-)
-
-# Register in dependency order: fragments → specs → services
-_register(
-    "src.services.prompts.translation_fragments",
-    "src/services/prompts/translation_fragments.py",
-)
-_register(
-    "src.services.prompts.translation",
-    "src/services/prompts/translation.py",
-)
-_register(
-    "src.services.prompts.image_translation",
-    "src/services/prompts/image_translation.py",
-)
-_register(
-    "src.services.translation_service",
-    "src/services/translation_service.py",
-)
-_register(
-    "src.services.image_translation_service",
-    "src/services/image_translation_service.py",
-)
-
-# ── Main-repo imports ─────────────────────────────────────────────────────────
-# These are available because the main PU_AISandbox root is on sys.path
-# when running from that repo's root directory.
-
-from src.cli import _add_common_flags, _add_notes_flags           # noqa: E402
-from src.config import parse_language_code, validate_page_nums    # noqa: E402
-from src.errors import CLIError                                    # noqa: E402
-from src.models import OutputOptions                               # noqa: E402
-from src.processors.constants import IMAGE_EXTENSIONS             # noqa: E402
-from src.processors.docx_processor import DocxProcessor           # noqa: E402
-from src.processors.pdf_processor import generate_process_text    # noqa: E402
-from src.processors.txt_processor import TxtProcessor             # noqa: E402
-from src.services.constants import DEFAULT_PARALLEL_WORKERS       # noqa: E402
-from src.settings import DEFAULT_PAGE_SIZE                        # noqa: E402
+# Load fragments and register EA data into the base plugin's fragment dicts.
+# Must run at import time, after the base plugin has already injected the
+# shared service modules into sys.modules (guaranteed by alphabetical load
+# order: plugins/translation/ < plugins/translation-ea/).
+_frags = _load_ea_module("pu_plugin.translation_ea.fragments", "fragments.py")
 
 
-# ── Plugin class ──────────────────────────────────────────────────────────────
+# ── Main-repo imports ──────────────────────────────────────────────────────────
 
-class TranslationPlugin:
-    """Translation and image-translation mode plugin."""
+from src.cli import _add_common_flags, _add_notes_flags        # noqa: E402
+from src.config import parse_language_code                     # noqa: E402
+from src.errors import CLIError                                # noqa: E402
+
+
+# ── Plugin class ───────────────────────────────────────────────────────────────
+
+class EastAsiaTranslationPlugin:
+    """East Asia translation plugin.  Owns Japanese, Chinese, and Korean as
+    source languages and contributes East Asia destination guidance.
+    """
 
     commands: list[str] = ["translate"]
 
-    # ── Argument registration ─────────────────────────────────────────────────
+    # Languages this plugin owns as source languages.
+    handles: list[str] = [
+        "Japanese",
+        "Chinese",
+        "Simplified Chinese",
+        "Traditional Chinese",
+        "Korean",
+    ]
 
-    def register_subparsers(
-        self,
-        subparsers: argparse._SubParsersAction,
-    ) -> None:
-        p = subparsers.add_parser("translate", help="Translate documents or text")
-        p.add_argument(
-            "language_code",
-            type=parse_language_code,
-            help="Translation direction (CE, JE, KE, etc.)",
-        )
+    # ── Argument registration ──────────────────────────────────────────────────
 
-        input_group = p.add_mutually_exclusive_group(required=False)
-        input_group.add_argument(
-            "-i", "--input",
-            dest="input_file",
-            type=str,
-            help="Input file path (PDF, DOCX, TXT)",
-        )
-        input_group.add_argument(
-            "-c", "--custom",
-            dest="custom_text",
-            action="store_true",
-            help="Input custom text",
-        )
+    def register_command_flags(self, parser: argparse.ArgumentParser) -> None:
+        """Add East Asia-specific flags to an existing 'translate' subparser.
 
-        p.add_argument(
-            "-p", "--page_nums",
-            dest="page_nums",
-            type=validate_page_nums,
-            help='Page numbers to process (e.g., "1" or "1-5")',
-        )
-        p.add_argument("-a", "--abstract", dest="abstract", action="store_true",
-                       help="Text has an abstract")
-        p.add_argument("--auto-save", dest="auto_save", action="store_true",
-                       help="Auto-save with timestamp")
-        p.add_argument("--progressive-save", dest="progressive_save",
-                       action="store_true",
-                       help="Save each page immediately (text output only)")
-        p.add_argument("-f", "--font", dest="custom_font", type=str,
-                       help="Custom font name (must be in fonts/)")
-        p.add_argument("--font-size", dest="font_size", type=int, default=None,
-                       metavar="PT",
-                       help="Body font size in points for PDF/Word output (default: 9)")
-        p.add_argument(
+        Called by DispatchPlugin when building the merged parser.  Only EA-
+        owned flags belong here — universal flags are registered by the base
+        plugin via its own register_command_flags() call.
+        """
+        parser.add_argument(
             "--kanbun", dest="kanbun", action="store_true",
             help=(
                 "Source text is kanbun (漢文): apply kundoku word-order "
                 "reconstruction and Classical Chinese reading conventions"
             ),
         )
+
+    def register_subparsers(
+        self,
+        subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+    ) -> None:
+        """Register a standalone 'translate' subcommand.
+
+        Used only when this plugin loads without a DispatchPlugin (i.e. the
+        base translation plugin is absent — an unsupported but gracefully
+        handled configuration).  In the normal two-plugin setup, DispatchPlugin
+        calls register_command_flags() on this plugin instead.
+        """
+        from src.config import validate_page_nums
+        from src.services.constants import DEFAULT_PARALLEL_WORKERS
+
+        p = subparsers.add_parser("translate", help="Translate documents or text (East Asia)")
         p.add_argument(
-            "-w", "--workers",
-            dest="workers",
-            type=int,
-            default=DEFAULT_PARALLEL_WORKERS,
-            metavar="N",
-            help=(
-                "Number of parallel translation workers (default: %(default)s). "
-                "Each page is sent as an independent API call. "
-                "Workers > 1 uses untranslated source text as context and "
-                "disables progressive save."
-            ),
+            "language_code",
+            type=parse_language_code,
+            help="Translation direction as a source-target pair (e.g. J-E, C-E, K-E)",
         )
+
+        input_group = p.add_mutually_exclusive_group(required=False)
+        input_group.add_argument("-i", "--input", dest="input_file", type=str,
+                                 help="Input file path (PDF, DOCX, TXT)")
+        input_group.add_argument("-c", "--custom", dest="custom_text",
+                                 action="store_true", help="Input custom text")
+
+        p.add_argument("-p", "--page_nums", dest="page_nums", type=validate_page_nums,
+                       help='Page numbers to process (e.g., "1" or "1-5")')
+        p.add_argument("-a", "--abstract", dest="abstract", action="store_true",
+                       help="Text has an abstract")
+        p.add_argument("--auto-save", dest="auto_save", action="store_true",
+                       help="Auto-save with timestamp")
+        p.add_argument("--progressive-save", dest="progressive_save", action="store_true",
+                       help="Save each page immediately (text output only)")
+        p.add_argument("-f", "--font", dest="custom_font", type=str,
+                       help="Custom font name (must be in fonts/)")
+        p.add_argument("--font-size", dest="font_size", type=int, default=None,
+                       metavar="PT", help="Body font size in points (default: 9)")
+        p.add_argument("-w", "--workers", dest="workers", type=int,
+                       default=DEFAULT_PARALLEL_WORKERS, metavar="N",
+                       help="Number of parallel translation workers (default: %(default)s)")
         p.add_argument("--spread", dest="spread", action="store_true",
-                       help="Image is a two-page spread (two facing pages scanned together); "
-                            "applies to image file inputs and --scanned PDFs")
-        p.add_argument(
-            "--scanned", dest="scanned", action="store_true",
-            help="Treat the PDF as a scanned image document: each page is rendered "
-                 "as an image and processed via the OCR+translation pipeline "
-                 "(vision model). PDF only.",
-        )
-        p.add_argument(
-            "--preserve-tables", dest="preserve_tables", action="store_true",
-            help="Hint to the model that tabular data should be returned as Markdown "
-                 "tables; the output layer renders them as proper tables in PDF/DOCX "
-                 "or ASCII in TXT.",
-        )
-        p.add_argument(
-            "--preserve-media", dest="preserve_media", action="store_true",
-            help="Carry embedded images from a .docx source into the translated "
-                 ".docx output (requires -i *.docx and -o *.docx)",
-        )
-        p.add_argument(
-            "--toc", dest="toc", action="store_true",
-            help="Document contains a table of contents: normalize dot leaders "
-                 "(e.g. '............') to exactly five dots (.....) between "
-                 "section titles and page numbers",
-        )
+                       help="Image is a two-page spread")
+        p.add_argument("--scanned", dest="scanned", action="store_true",
+                       help="Treat PDF as scanned (OCR+translate via vision model)")
+        p.add_argument("--preserve-tables", dest="preserve_tables", action="store_true",
+                       help="Return tables as Markdown")
+        p.add_argument("--preserve-media", dest="preserve_media", action="store_true",
+                       help="Carry embedded images from .docx source to .docx output")
+        p.add_argument("--toc", dest="toc", action="store_true",
+                       help="Normalize table of contents dot leaders")
         _add_common_flags(p)
         _add_notes_flags(p)
+        # EA-specific flags
+        self.register_command_flags(p)
 
-    # ── Command execution ─────────────────────────────────────────────────────
+    # ── Peer guidance ──────────────────────────────────────────────────────────
+
+    def get_peer_guidance(self, token: str) -> Optional[str]:
+        """Return destination-side guidance when an EA language is the target.
+
+        Called by DispatchPlugin when this plugin owns the destination language
+        and a different plugin is driving the translation.  Returns a string to
+        inject EA destination conventions into the source plugin's prompt, or
+        None if no special guidance is needed for this target.
+        """
+        if _frags and hasattr(_frags, 'PEER_GUIDANCE'):
+            return _frags.PEER_GUIDANCE.get(token)
+        return None
+
+    # ── Command execution ──────────────────────────────────────────────────────
 
     def run(
         self,
@@ -211,9 +200,16 @@ class TranslationPlugin:
         top_p: Optional[float],
         max_tokens: Optional[int],
     ) -> None:
-        """Execute the translate command."""
-        import os
+        """Execute the translate command for an East Asian source language."""
         from src.runtime.sandbox_processor import SandboxProcessor
+
+        # Base plugin is required for the service layer.
+        _base_module = sys.modules.get('pu_plugin.translation.plugin')
+        if _base_module is None:
+            raise CLIError(
+                "The East Asia translation plugin requires the base translation "
+                "plugin (plugins/translation/) to be installed and loaded."
+            )
 
         sandbox = SandboxProcessor(
             professor,
@@ -224,229 +220,22 @@ class TranslationPlugin:
         )
 
         language_code = args.language_code
-
         if not isinstance(language_code, tuple) or len(language_code) != 2:
-            raise CLIError("Translation requires a 2-character language code (e.g., CE, JE, KE)")
+            raise CLIError("Translation requires a language pair (e.g. J-E).")
+        source_language, target_language = language_code
 
-        source_language: str = language_code[0]
-        target_language: str = language_code[1]
+        # EA-specific variant notes — append one per active convention flag.
+        # Multiple notes accumulate; each renders as a separate additional-
+        # instructions block in the system prompt, in order of appending.
+        if _frags and getattr(args, 'kanbun', False):
+            sandbox.translation_service.variant_notes.append(_frags.KANBUN_NOTE)
 
-        # --scanned compatibility checks
-        if getattr(args, 'scanned', False):
-            _scanned_input: Optional[str] = getattr(args, 'input_file', None)
-            if not _scanned_input:
-                raise CLIError("--scanned requires a file input (-i).")
-            if getattr(args, 'custom_text', False):
-                raise CLIError("Cannot use --scanned with custom text input (-c).")
-            _scanned_ext = os.path.splitext(_scanned_input)[1].lower()
-            if _scanned_ext != '.pdf':
-                raise CLIError(
-                    f"--scanned is only valid for PDF files (got '{_scanned_ext}'). "
-                    "For image files, the translate command routes through OCR automatically."
-                )
-            if getattr(args, 'preserve_media', False):
-                raise CLIError("Cannot combine --scanned with --preserve-media.")
+        # Apply any destination-side peer guidance injected by DispatchPlugin.
+        for note in getattr(args, '_peer_guidance', []):
+            sandbox.translation_service.variant_notes.append(note)
 
-        # --preserve-media compatibility checks
-        if getattr(args, 'preserve_media', False):
-            if getattr(args, 'progressive_save', False):
-                raise CLIError("Cannot combine --preserve-media with --progressive-save.")
-            if getattr(args, 'custom_text', False):
-                raise CLIError(
-                    "Cannot use --preserve-media with custom text input (-c): "
-                    "pasted text contains no embedded media."
-                )
-            input_file_arg: Optional[str] = getattr(args, 'input_file', None)
-            if not input_file_arg:
-                raise CLIError(
-                    "Cannot use --preserve-media without a file input (-i)."
-                )
-            input_ext = os.path.splitext(input_file_arg)[1].lower()
-            if input_ext in IMAGE_EXTENSIONS:
-                raise CLIError(
-                    "Cannot use --preserve-media with an image file input: "
-                    "images have no embedded media to carry over."
-                )
-            if input_ext not in ('.docx', '.pdf'):
-                raise CLIError(
-                    f"Cannot use --preserve-media with '{input_ext}' files: "
-                    "media preservation supports Word documents (.docx) and PDF files (.pdf)."
-                )
-            output_file_arg: Optional[str] = getattr(args, 'output_file', None)
-            if getattr(args, 'auto_save', False) and not output_file_arg:
-                raise CLIError(
-                    "Cannot use --preserve-media with --auto-save: auto-save produces a .txt file. "
-                    "Specify a .docx output with -o."
-                )
-            if not output_file_arg:
-                raise CLIError(
-                    "Cannot use --preserve-media without a .docx output file. "
-                    "Specify an output with -o, e.g. -o translated.docx."
-                )
-            out_ext = os.path.splitext(output_file_arg)[1].lower()
-            if out_ext == '.txt':
-                raise CLIError(
-                    "--preserve-media requires a .docx output file; "
-                    ".txt files cannot embed images."
-                )
-            if out_ext == '.pdf':
-                raise CLIError(
-                    "--preserve-media does not yet support PDF output. "
-                    "Specify a .docx output file with -o."
-                )
-            if out_ext != '.docx':
-                raise CLIError(
-                    "--preserve-media requires a .docx output file "
-                    f"(got '{out_ext}')."
-                )
-
-        if getattr(args, 'notes', False):
-            _preview_sys: Optional[str] = None
-            _preview_usr: Optional[str] = None
-            if args.input_file:
-                _fp = os.path.abspath(args.input_file)
-                if os.path.exists(_fp) and sandbox.image_processor.is_image_file(_fp):
-                    _preview_sys, _preview_usr = sandbox.image_translation_service.build_prompts(
-                        source_language, target_language
-                    )
-                else:
-                    _placeholder = generate_process_text("", f"[{source_language} document text]", "")
-                    _preview_sys, _preview_usr = sandbox.translation_service.build_prompts(
-                        _placeholder, source_language, target_language
-                    )
-            else:
-                _placeholder = generate_process_text("", f"[{source_language} custom text]", "")
-                _preview_sys, _preview_usr = sandbox.translation_service.build_prompts(
-                    _placeholder, source_language, target_language
-                )
-            sys_note, usr_note = sandbox._collect_notes(_preview_sys, _preview_usr)
-            sandbox.translation_service.system_note = sys_note
-            sandbox.translation_service.user_note = usr_note
-            sandbox.image_translation_service.system_note = sys_note
-            sandbox.image_translation_service.user_note = usr_note
-
-        sandbox._apply_inline_notes(sandbox.translation_service, args)
-        sandbox._apply_inline_notes(sandbox.image_translation_service, args)
-
-        if getattr(args, 'kanbun', False):
-            sandbox.translation_service.kanbun = True
-
-        if getattr(args, 'preserve_tables', False):
-            sandbox.translation_service.tables = True
-            sandbox.image_translation_service.tables = True
-
-        if getattr(args, 'toc', False):
-            sandbox.translation_service.toc = True
-
-        if getattr(args, 'dry_run', False):
-            model_dr = sandbox.translation_service._get_model()
-            abstract_text_dr: Optional[str] = None
-            if getattr(args, 'abstract', False):
-                abstract_text_dr = sandbox._collect_multiline("Abstract text") or None
-
-            if args.input_file:
-                file_path_dr = os.path.abspath(args.input_file)
-                file_type_dr = sandbox._detect_and_validate_file(file_path_dr)
-                if file_type_dr == 'image':
-                    spread_dr = getattr(args, 'spread', False)
-                    sys_p, usr_p = sandbox.image_translation_service.build_prompts(source_language, target_language, spread=spread_dr)
-                    sandbox._dry_run_display(
-                        sandbox.image_translation_service._get_model(), sys_p, usr_p,
-                        note="Image content would be base64-encoded and attached to the user message",
-                        **sandbox._sampling_kwargs(args),
-                    )
-                    return
-                elif file_type_dr == 'pdf':
-                    if getattr(args, 'scanned', False):
-                        spread_dr = getattr(args, 'spread', False)
-                        sys_p, usr_p = sandbox.image_translation_service.build_prompts(
-                            source_language, target_language, spread=spread_dr
-                        )
-                        sandbox._dry_run_display(
-                            sandbox.image_translation_service._get_model(), sys_p, usr_p,
-                            note="Scanned PDF: each page will be rendered as an image and attached to the user message",
-                            **sandbox._sampling_kwargs(args),
-                        )
-                        return
-                    with open(file_path_dr, 'rb') as f:
-                        first_page = next(iter(sandbox.pdf_processor.process_pdf(f)), None)
-                        page_text_dr = sandbox.pdf_processor.process_page(first_page) if first_page else "[no text found in PDF]"
-                elif file_type_dr == 'docx':
-                    with open(file_path_dr, 'rb') as f:
-                        pages_dr = DocxProcessor.process_docx_with_pages(f, target_page_size=DEFAULT_PAGE_SIZE)
-                        page_text_dr = pages_dr[0] if pages_dr else "[no text found in document]"
-                elif file_type_dr == 'txt':
-                    with open(file_path_dr, 'r', encoding='utf-8') as f:
-                        pages_dr = TxtProcessor.process_txt_with_pages(f, target_page_size=DEFAULT_PAGE_SIZE)
-                        page_text_dr = pages_dr[0] if pages_dr else "[no text found in file]"
-                else:
-                    page_text_dr = f"[{source_language} text to translate]"
-            elif args.custom_text:
-                page_text_dr = sandbox._collect_multiline(
-                    f"Enter the {source_language} text you want to translate to {target_language}"
-                )
-                if not page_text_dr.strip():
-                    page_text_dr = f"[{source_language} text to translate]"
-            else:
-                page_text_dr = f"[{source_language} text to translate]"
-
-            combined = generate_process_text(abstract_text_dr or "", page_text_dr, "")
-            context_type_dr = "abstract" if abstract_text_dr else "none"
-            output_file_dr = getattr(args, 'output_file', None)
-            auto_save_dr = getattr(args, 'auto_save', False)
-            if output_file_dr:
-                ext = output_file_dr.lower().rsplit('.', 1)[-1] if '.' in output_file_dr else ''
-                output_format_dr = {'pdf': 'pdf', 'docx': 'docx', 'txt': 'txt'}.get(ext, 'file')
-            elif auto_save_dr:
-                output_format_dr = 'txt'
-            else:
-                output_format_dr = 'console'
-            sys_p, usr_p = sandbox.translation_service.build_prompts(combined, source_language, target_language, output_format=output_format_dr, context_type=context_type_dr)
-            sandbox._dry_run_display(model_dr, sys_p, usr_p, **sandbox._sampling_kwargs(args))
-            return
-
-        opts = OutputOptions(
-            output_file=sandbox._resolve_output_path(args),
-            auto_save=getattr(args, 'auto_save', False),
-            progressive_save=getattr(args, 'progressive_save', False),
-            custom_font=getattr(args, 'custom_font', None),
-            preserve_media=getattr(args, 'preserve_media', False),
-            font_size=getattr(args, 'font_size', None),
-        )
-        workers = getattr(args, 'workers', 1)
-        spread = getattr(args, 'spread', False)
-        if args.custom_text:
-            sandbox.translate_custom_text(
-                source_language,
-                target_language,
-                getattr(args, 'abstract', False),
-                opts,
-            )
-        elif args.input_file:
-            input_path = os.path.abspath(args.input_file)
-            if os.path.isdir(input_path):
-                sandbox.process_image_translation_folder(
-                    input_path,
-                    source_language,
-                    target_language,
-                    opts,
-                    workers=workers,
-                    spread=spread,
-                )
-            else:
-                sandbox.translate_document(
-                    args.input_file,
-                    source_language,
-                    target_language,
-                    getattr(args, 'page_nums', None),
-                    getattr(args, 'abstract', False),
-                    opts,
-                    workers=workers,
-                    spread=spread,
-                    scanned=getattr(args, 'scanned', False),
-                )
-        else:
-            raise CLIError("No input specified. Use -i for file input or -c for custom text.")
+        # Delegate all universal validation and dispatch to the base plugin.
+        _base_module._execute_translate(sandbox, args, source_language, target_language)
 
 
-plugin = TranslationPlugin()
+plugin = EastAsiaTranslationPlugin()
