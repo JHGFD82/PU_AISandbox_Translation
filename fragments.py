@@ -16,8 +16,8 @@ ADDING A NEW LANGUAGE
 To add a new East Asian language:
   1. Add its script guidance to _SCRIPT_GUIDANCE.
   2. Add any relevant language-pair notes to _PAIR_NOTES.
-  3. Add it to EastAsiaTranslationPlugin.handles in plugin.py.
-No changes to the base plugin or the framework are needed.
+  3. Add its shortcode to EastAsiaTranslationPlugin.handles in plugin.py
+     (matching the key in LANGUAGE_MAP, e.g. ``"vi"`` for Vietnamese).
 """
 
 from src.services.prompts import translation_fragments as _F  # noqa: E402

@@ -15,18 +15,24 @@ loader detects that both register ``translate`` and both declare ``handles``.
 Rather than treating this as a conflict, it merges them into a DispatchPlugin
 that routes each invocation to the plugin owning the source language:
 
-  translate J-E  → this plugin owns Japanese, drives translation
-  translate E-J  → base plugin owns English, drives translation;
+  translate jp-en  → this plugin owns Japanese, drives translation
+  translate en-jp  → base plugin owns English, drives translation;
                    this plugin contributes Japanese destination guidance
-  translate J-F  → this plugin drives; French plugin (if loaded) contributes
+  translate jp-fr  → this plugin drives; French plugin (if loaded) contributes
                    destination guidance; no French plugin → proceeds without it
 
 EA-SPECIFIC FEATURES
 --------------------
-  --kanbun   Source text is kanbun (漢文): apply kundoku word-order
+  --kanbun     Source text is kanbun (漢文): apply kundoku word-order
              reconstruction and classical Chinese reading conventions.
              Appends KANBUN_NOTE (from fragments.py) to variant_notes on the
              translation service before delegating to the shared executor.
+
+  --simplified / --traditional
+             Source Chinese text uses a specific script variety.
+             Changes the resolved source language from "Chinese" to
+             "Simplified Chinese" or "Traditional Chinese" in the prompt.
+             Mutually exclusive; only valid when the source language is ``zh``.
 
 FRAGMENT REGISTRATION
 ---------------------
@@ -80,7 +86,7 @@ _frags = _load_ea_module("pu_plugin.translation_ea.fragments", "fragments.py")
 # ── Main-repo imports ──────────────────────────────────────────────────────────
 
 from src.cli import _add_common_flags, _add_notes_flags        # noqa: E402
-from src.config import parse_language_code                     # noqa: E402
+from src.config import parse_language_code, LANGUAGE_MAP                     # noqa: E402
 from src.errors import CLIError                                # noqa: E402
 
 
@@ -94,12 +100,14 @@ class EastAsiaTranslationPlugin:
     commands: list[str] = ["translate"]
 
     # Languages this plugin owns as source languages.
+    # ``handles`` stores the shortcodes that users type on the command line
+    # (e.g. ``jp`` for Japanese), matching the keys in ``LANGUAGE_MAP``.
+    # Simplified/Traditional Chinese are handled as flags on ``zh``, not as
+    # separate codes.
     handles: list[str] = [
-        "Japanese",
-        "Chinese",
-        "Simplified Chinese",
-        "Traditional Chinese",
-        "Korean",
+        "jp",
+        "zh",
+        "kr",
     ]
 
     # ── Argument registration ──────────────────────────────────────────────────
@@ -116,6 +124,21 @@ class EastAsiaTranslationPlugin:
             help=(
                 "Source text is kanbun (漢文): apply kundoku word-order "
                 "reconstruction and Classical Chinese reading conventions"
+            ),
+        )
+        script_group = parser.add_mutually_exclusive_group()
+        script_group.add_argument(
+            "--simplified", dest="simplified", action="store_true",
+            help=(
+                "Source Chinese text uses Simplified characters (简体字); "
+                "only valid when source language is zh"
+            ),
+        )
+        script_group.add_argument(
+            "--traditional", dest="traditional", action="store_true",
+            help=(
+                "Source Chinese text uses Traditional characters (繁體字); "
+                "only valid when source language is zh"
             ),
         )
 
@@ -137,7 +160,7 @@ class EastAsiaTranslationPlugin:
         p.add_argument(
             "language_code",
             type=parse_language_code,
-            help="Translation direction as a source-target pair (e.g. J-E, C-E, K-E)",
+            help="Translation direction as a source-target pair (e.g. jp-en, zh-en, kr-en)",
         )
 
         input_group = p.add_mutually_exclusive_group(required=False)
@@ -222,8 +245,21 @@ class EastAsiaTranslationPlugin:
 
         language_code = args.language_code
         if not isinstance(language_code, tuple) or len(language_code) != 2:
-            raise CLIError("Translation requires a language pair (e.g. J-E).")
-        source_language, target_language = language_code
+            raise CLIError("Translation requires a language pair (e.g. jp-en).")
+        source_code, target_code = language_code
+        source_language = LANGUAGE_MAP.get(source_code, source_code)
+        target_language = LANGUAGE_MAP.get(target_code, target_code)
+
+        # Resolve Chinese script variant from flags.
+        if source_code == 'zh':
+            if getattr(args, 'simplified', False):
+                source_language = 'Simplified Chinese'
+            elif getattr(args, 'traditional', False):
+                source_language = 'Traditional Chinese'
+        elif getattr(args, 'simplified', False) or getattr(args, 'traditional', False):
+            raise CLIError(
+                "--simplified and --traditional are only valid when the source language is zh (Chinese)."
+            )
 
         # EA-specific variant notes — append one per active convention flag.
         # Multiple notes accumulate; each renders as a separate additional-

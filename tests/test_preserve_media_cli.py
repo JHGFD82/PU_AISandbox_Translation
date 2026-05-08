@@ -32,17 +32,17 @@ class TestPreserveMediaCLIFlag:
         return _make_parser()
 
     def test_preserve_media_defaults_to_false(self, parser):
-        args = parser.parse_args(["heller", "translate", "C-E", "-i", "doc.docx", "-o", "out.docx"])
+        args = parser.parse_args(["heller", "translate", "zh-en", "-i", "doc.docx", "-o", "out.docx"])
         assert args.preserve_media is False
 
     def test_preserve_media_flag_sets_true(self, parser):
         args = parser.parse_args([
-            "heller", "translate", "C-E", "-i", "doc.docx", "-o", "out.docx", "--preserve-media"
+            "heller", "translate", "zh-en", "-i", "doc.docx", "-o", "out.docx", "--preserve-media"
         ])
         assert args.preserve_media is True
 
     def test_preserve_media_not_present_on_transcribe(self, parser):
-        args = parser.parse_args(["heller", "transcribe", "J", "-i", "img.png"])
+        args = parser.parse_args(["heller", "transcribe", "jp", "-i", "img.png"])
         assert not hasattr(args, "preserve_media") or args.preserve_media is False
 
 
@@ -65,7 +65,7 @@ class TestPreserveMediaValidationPdfInput:
 
         parser = _make_parser()
         args = parser.parse_args([
-            "heller", "translate", "C-E",
+            "heller", "translate", "zh-en",
             "-i", pdf_path,
             "-o", out_path,
             "--preserve-media",
@@ -94,7 +94,7 @@ class TestPreserveMediaValidationPdfInput:
 
         parser = _make_parser()
         args = parser.parse_args([
-            "heller", "translate", "C-E",
+            "heller", "translate", "zh-en",
             "-i", pdf_path,
             "-o", out_path,
             "--preserve-media",
