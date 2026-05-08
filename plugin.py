@@ -32,7 +32,8 @@ FRAGMENT REGISTRATION
 ---------------------
 At import time this plugin loads fragments.py and registers East Asia script
 guidance and language-pair notes into the base plugin's translation_fragments
-module (via setdefault() so user prompts.toml overrides are respected).
+module via setdefault(), so the first-loaded plugin's entry always wins if
+two language plugins ever register the same token.
 """
 
 from __future__ import annotations

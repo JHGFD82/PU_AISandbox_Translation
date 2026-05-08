@@ -6,11 +6,10 @@ data, then exposes EA-specific constants for use in plugin.py's run().
 
 REGISTRATION PATTERN
 --------------------
-Each dict uses ``setdefault()`` rather than direct assignment, so that user
-overrides already applied by the base plugin's ``_load_user_overrides()``
-(which runs when translation_fragments.py is first imported) are respected.
-If a user has placed a Japanese→Korean entry in prompts.toml, it stays; if
-not, the EA default is used.
+Each dict uses ``setdefault()`` rather than direct assignment, so that if two
+language plugins both register the same token (e.g. a future Vietnamese plugin
+also providing Japanese script guidance), the first-loaded plugin's entry wins
+and a later plugin does not silently overwrite it.
 
 ADDING A NEW LANGUAGE
 ---------------------

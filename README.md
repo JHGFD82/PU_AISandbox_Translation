@@ -50,16 +50,6 @@ temperature = 0.3
 max_tokens = 8000
 ```
 
-### `prompts.toml` (optional)
-
-Override built-in prompt fragments without editing source code:
-
-```bash
-cp plugins/translation-ea/prompts.template.toml prompts.toml
-```
-
-Place `prompts.toml` in the PU_AISandbox root. It is git-ignored and will not be committed. Uncomment only the keys you want to change. Fragment defaults are defined in `plugins/translation/src/services/prompts/translation_fragments.py` (base plugin) and `plugins/translation-ea/fragments.py` (EA additions).
-
 ---
 
 ## Running Tests
