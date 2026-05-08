@@ -153,7 +153,7 @@ class EastAsiaTranslationPlugin:
         handled configuration).  In the normal two-plugin setup, DispatchPlugin
         calls register_command_flags() on this plugin instead.
         """
-        from src.config import validate_page_nums
+        from plugins.translation.utils import validate_page_nums
         from src.services.constants import DEFAULT_PARALLEL_WORKERS
 
         p = subparsers.add_parser("translate", help="Translate documents or text (East Asia)")
