@@ -28,7 +28,7 @@ When both plugins are installed, the plugin loader merges them into a `DispatchP
 | English | Base plugin (`plugins/translation/`) |
 | Japanese, Chinese, Simplified Chinese, Traditional Chinese, Korean | This plugin |
 
-When translating *into* an East Asian language (e.g. `E-J`), the base plugin drives the translation and this plugin contributes destination-side conventions via `get_peer_guidance()`. This requires no action from the user.
+When translating *into* an East Asian language (e.g. `en-jp`), the base plugin drives the translation and this plugin contributes destination-side conventions via `get_peer_guidance()`. This requires no action from the user.
 
 ---
 
@@ -76,14 +76,11 @@ pytest -k "kanbun"
 
 | Code | Language |
 |------|----------|
-| `C`  | Chinese (Classical / Traditional) |
-| `S`  | Simplified Chinese |
-| `J`  | Japanese |
-| `K`  | Korean |
+| `zh` | Chinese (Traditional by default; use `--simplified` or `--traditional` to specify) |
+| `jp` | Japanese |
+| `kr` | Korean |
 
-Combined with base-plugin codes (e.g. `E` for English): `J-E` (Japanese → English), `E-J` (English → Japanese), `C-E`, `K-E`, `S-E`, etc.
-
-Custom codes can be added via `languages.toml` in the main repo root (see `languages.template.toml`).
+Combined with the base-plugin English code `en`: `jp-en` (Japanese → English), `en-jp` (English → Japanese), `zh-en`, `kr-en`, `en-zh`, etc.
 
 ---
 
@@ -97,31 +94,34 @@ python main.py <professor> translate <language-code> [options]
 
 ```bash
 # Translate a PDF from Japanese to English:
-python main.py heller translate J-E -i article.pdf -o article_en.pdf
+python main.py heller translate jp-en -i article.pdf -o article_en.pdf
 
-# Translate a Word document from Chinese, preserving embedded images:
-python main.py heller translate C-E -i paper.docx -o paper_en.docx --preserve-media
+# Translate a Word document from Chinese (Traditional), preserving embedded images:
+python main.py heller translate zh-en -i paper.docx -o paper_en.docx --preserve-media
+
+# Translate a Word document from Simplified Chinese:
+python main.py heller translate zh-en --simplified -i paper.docx -o paper_en.docx
 
 # Translate a kanbun text with kundoku reconstruction:
-python main.py heller translate J-E -i kanbun.txt --kanbun -o output.txt
+python main.py heller translate jp-en -i kanbun.txt --kanbun -o output.txt
 
 # Translate specific pages only:
-python main.py heller translate C-E -i book.pdf -p 5-10 -o ch5-10_en.txt
+python main.py heller translate zh-en -i book.pdf -p 5-10 -o ch5-10_en.txt
 
 # Translate a scanned PDF (OCR + translation via vision model):
-python main.py heller translate J-E -i scan.pdf --scanned -o scan_en.docx
+python main.py heller translate jp-en -i scan.pdf --scanned -o scan_en.docx
 
 # Translate a single image:
-python main.py heller translate C-E -i diagram.png -o diagram_en.txt
+python main.py heller translate zh-en -i diagram.png -o diagram_en.txt
 
 # Enter custom text interactively:
-python main.py heller translate K-E -c
+python main.py heller translate kr-en -c
 
 # Translate in parallel (4 workers):
-python main.py heller translate J-E -i long.pdf -o long_en.pdf -w 4
+python main.py heller translate jp-en -i long.pdf -o long_en.pdf -w 4
 
 # Dry run — print prompts without calling the API:
-python main.py heller translate C-E -i article.pdf --dry-run
+python main.py heller translate zh-en -i article.pdf --dry-run
 ```
 
 ---
@@ -154,6 +154,8 @@ python main.py heller translate C-E -i article.pdf --dry-run
 | `--toc` | Document has a table of contents: normalize dot leaders. |
 | `--preserve-tables` | Return tabular data as Markdown tables. |
 | **`--kanbun`** | **EA only.** Source text is kanbun (漢文): apply kundoku word-order reconstruction and Classical Chinese reading conventions. |
+| **`--simplified`** | **EA only (`zh` source).** Treat source as Simplified Chinese. Mutually exclusive with `--traditional`. |
+| **`--traditional`** | **EA only (`zh` source).** Treat source as Traditional Chinese. Mutually exclusive with `--simplified`. |
 
 ### Media and Document Structure
 

@@ -21,6 +21,7 @@ To add a new East Asian language:
 """
 
 from src.services.prompts import translation_fragments as _F  # noqa: E402
+from src.config import register_language as _register_language  # noqa: E402
 
 
 # ── Image translation script guidance ─────────────────────────────────────────
@@ -57,6 +58,11 @@ _SCRIPT_GUIDANCE: dict[str, str] = {
 
 for _lang, _note in _SCRIPT_GUIDANCE.items():
     _F.IMAGE_TRANSLATION_SCRIPT_GUIDANCE.setdefault(_lang, _note)
+
+# Register EA source languages into the shared language registry.
+_register_language('jp', 'Japanese')
+_register_language('zh', 'Chinese')
+_register_language('kr', 'Korean')
 
 
 # ── Language-pair notes ────────────────────────────────────────────────────────
