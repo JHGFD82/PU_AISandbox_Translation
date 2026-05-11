@@ -76,7 +76,7 @@ Key items:
 ## Relationship to Main Repo and Base Plugin
 
 Runtime dependencies (from main repo `src/`):
-- `src.cli`: `_add_common_flags`, `_add_notes_flags`
+- `src.cli`: `add_common_flags`, `add_notes_flags`
 - `src.config`: `parse_language_code`
 - `src.errors`: `CLIError`
 - `src.runtime.sandbox_processor`: `SandboxProcessor`

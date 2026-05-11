@@ -85,7 +85,7 @@ _frags = _load_ea_module("pu_plugin.translation_ea.fragments", "fragments.py")
 
 # ── Main-repo imports ──────────────────────────────────────────────────────────
 
-from src.cli import _add_common_flags, _add_notes_flags        # noqa: E402
+from src.cli import add_common_flags, add_notes_flags        # noqa: E402
 from src.config import parse_language_code, LANGUAGE_MAP                     # noqa: E402
 from src.errors import CLIError                                # noqa: E402
 
@@ -194,8 +194,8 @@ class EastAsiaTranslationPlugin:
                        help="Carry embedded images from .docx source to .docx output")
         p.add_argument("--toc", dest="toc", action="store_true",
                        help="Normalize table of contents dot leaders")
-        _add_common_flags(p)
-        _add_notes_flags(p)
+        add_common_flags(p)
+        add_notes_flags(p)
         # EA-specific flags
         self.register_command_flags(p)
 
