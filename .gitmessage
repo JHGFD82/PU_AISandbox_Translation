@@ -1,0 +1,28 @@
+# <type>(<scope>): <short summary>
+#
+# Types: feat, fix, refactor, docs, test, chore, perf, ci, build
+# Scope: optional module like cli, runtime, docs, tracking
+# Summary: imperative mood, <= 72 chars (e.g., "restructure CLI subcommands")
+#
+# Why:
+# - What user/problem is being solved?
+#
+# What changed:
+# - Key change 1
+# - Key change 2
+#
+# Notes:
+# - Any migration, compatibility, or follow-up details
+#
+# Example:
+# refactor(cli): restructure command parsing with subcommands
+#
+# Why:
+# - Eliminate ambiguous argument parsing for usage commands
+#
+# What changed:
+# - Added professor-first command hierarchy
+# - Introduced usage/translate/transcribe subcommands
+#
+# Notes:
+# - --list-models and --update-pricing remain global commands
