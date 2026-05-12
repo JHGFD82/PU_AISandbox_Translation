@@ -12,3 +12,15 @@ venv/
 htmlcov/
 coverage.xml
 junit.xml
+
+# Specify filepatterns you want git to ignore.
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Pytest cache
+.pytest_cache/
+
+# VS Code
+.vscode/
