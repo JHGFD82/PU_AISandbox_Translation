@@ -4,8 +4,6 @@ Tests for --preserve-media CLI flag and validation logic.
 These tests require the translation plugin to be installed (plugin.py present).
 """
 
-import struct
-import zlib
 from pathlib import Path
 
 import pytest
@@ -60,11 +58,14 @@ class TestPreserveMediaValidationPdfInput:
         """PDF input + .docx output should pass validation (no CLIError)."""
         import fitz
         pdf_path = str(tmp_path / "source.pdf")
-        d = fitz.open(); d.new_page(); d.save(pdf_path); d.close()
+        d = fitz.open()
+        d.new_page()
+        d.save(pdf_path)
+        d.close()
         out_path = str(tmp_path / "out.docx")
 
         parser = _make_parser()
-        args = parser.parse_args([
+        parser.parse_args([
             "heller", "translate", "zh-en",
             "-i", pdf_path,
             "-o", out_path,
@@ -80,20 +81,23 @@ class TestPreserveMediaValidationPdfInput:
 
     def test_txt_input_still_rejected(self, tmp_path):
         """Non-.docx, non-.pdf input should still raise CLIError."""
-        import os as _os
         input_ext = ".txt"
         assert input_ext not in (".docx", ".pdf")
 
     def test_pdf_output_still_rejected(self, tmp_path):
         """PDF output is still not supported with --preserve-media."""
-        import fitz, os as _os
+        import fitz
+        import os as _os
 
         pdf_path = str(tmp_path / "source.pdf")
-        d = fitz.open(); d.new_page(); d.save(pdf_path); d.close()
+        d = fitz.open()
+        d.new_page()
+        d.save(pdf_path)
+        d.close()
         out_path = str(tmp_path / "out.pdf")
 
         parser = _make_parser()
-        args = parser.parse_args([
+        parser.parse_args([
             "heller", "translate", "zh-en",
             "-i", pdf_path,
             "-o", out_path,
