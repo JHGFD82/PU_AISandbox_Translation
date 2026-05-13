@@ -119,14 +119,15 @@ class EastAsiaTranslationPlugin:
         owned flags belong here — universal flags are registered by the base
         plugin via its own register_command_flags() call.
         """
-        parser.add_argument(
+        ea_group = parser.add_argument_group("East Asia options")
+        ea_group.add_argument(
             "--kanbun", dest="kanbun", action="store_true",
             help=(
                 "Source text is kanbun (漢文): apply kundoku word-order "
                 "reconstruction and Classical Chinese reading conventions"
             ),
         )
-        script_group = parser.add_mutually_exclusive_group()
+        script_group = ea_group.add_mutually_exclusive_group()
         script_group.add_argument(
             "--simplified", dest="simplified", action="store_true",
             help=(
