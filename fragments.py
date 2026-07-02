@@ -1,23 +1,30 @@
-"""East Asia translation prompt fragments.
+"""The actual instruction text this plugin adds to the AI model's translation prompts for East Asia languages.
 
-Loaded by plugins/translation-ea/plugin.py at import time.  Populates the
-base translation plugin's mutable fragment registries with East Asia language
-data, then exposes EA-specific constants for use in plugin.py's run().
+Loaded by ``plugin.py`` at import time. Two kinds of content live here:
+data that gets merged into the base translation plugin's own shared fragment
+dictionaries (script guidance and language-pair notes, both keyed by full
+language name), and EA-specific constants that ``plugin.py``'s ``run()``
+reads directly (``KANBUN_NOTE``, ``PEER_GUIDANCE``).
 
 REGISTRATION PATTERN
 --------------------
-Each dict uses ``setdefault()`` rather than direct assignment, so that if two
-language plugins both register the same token (e.g. a future Vietnamese plugin
-also providing Japanese script guidance), the first-loaded plugin's entry wins
-and a later plugin does not silently overwrite it.
+The merge into the base plugin's dictionaries uses ``dict.setdefault()``
+rather than plain assignment, so that if two language plugins ever both
+register the same key (e.g. a future Vietnamese plugin also providing
+Japanese script guidance), whichever plugin loaded first keeps its entry
+and a later plugin can't silently overwrite it.
 
 ADDING A NEW LANGUAGE
 ---------------------
 To add a new East Asian language:
-  1. Add its script guidance to _SCRIPT_GUIDANCE.
-  2. Add any relevant language-pair notes to _PAIR_NOTES.
-  3. Add its shortcode to EastAsiaTranslationPlugin.handles in plugin.py
-     (matching the key in LANGUAGE_MAP, e.g. ``"vi"`` for Vietnamese).
+  1. Add its script guidance to ``_SCRIPT_GUIDANCE`` (used when translating
+     from an image, so the model knows what script to expect).
+  2. Add any relevant language-pair notes to ``_PAIR_NOTES`` (guidance that
+     only applies for a specific source-to-target combination, like the
+     Japanese/Korean honorific-register notes below).
+  3. Add its short code to ``EastAsiaTranslationPlugin.handles`` in
+     ``plugin.py`` (matching the key in ``LANGUAGE_MAP``, e.g. ``"vi"`` for
+     Vietnamese).
 """
 
 from src.services.prompts import translation_fragments as _F  # noqa: E402

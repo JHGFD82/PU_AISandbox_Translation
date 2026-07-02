@@ -62,13 +62,14 @@ source ../../.venv/bin/activate        # macOS/Linux
 cd plugins/translation-ea
 pytest
 
-# Run with verbose output or a specific file/keyword:
+# Run with verbose output, or a specific file:
 pytest -v
-pytest tests/test_image_translation.py
-pytest -k "kanbun"
+pytest tests/test_preserve_media_cli.py
 ```
 
 `pytest.ini` adds the main repo root to `sys.path` automatically via `conftest.py`, so `src.*` imports resolve without extra setup.
+
+**Known gap**: the one test file here (`test_preserve_media_cli.py`) covers `--preserve-media`, a base-plugin flag, not this plugin's own behavior — there's currently no test coverage for `--kanbun`, `--simplified`/`--traditional`, or the dispatch/routing logic that is this plugin's actual purpose.
 
 ---
 
@@ -76,7 +77,7 @@ pytest -k "kanbun"
 
 | Code | Language |
 |------|----------|
-| `zh` | Chinese (Traditional by default; use `--simplified` or `--traditional` to specify) |
+| `zh` | Chinese (generic by default; use `--simplified` or `--traditional` to tell the model which script variety the source uses) |
 | `jp` | Japanese |
 | `kr` | Korean |
 

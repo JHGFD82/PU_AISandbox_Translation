@@ -1,45 +1,69 @@
 """PU_AISandbox East Asia Translation plugin.
 
-Provides ``translate`` support for East Asian source languages (Japanese,
-Chinese, Korean).  Requires the base translation plugin (plugins/translation/)
-to be present in the same PU_AISandbox installation — the base plugin owns
-the shared service layer (TranslationService, ImageTranslationService, and
-all prompt specs) and must load first.
+Adds Japanese, Chinese, and Korean as *source* languages to the
+``translate`` command the base translation plugin already provides for
+English. Requires the base translation plugin (``plugins/translation/``) to
+also be installed — it owns the shared translation machinery (the classes
+that actually build prompts and call the AI model) that this plugin reuses
+rather than duplicating.
 
 Clone this repo into ``plugins/translation-ea/`` inside the PU_AISandbox repo.
 
-DISPATCH MODEL
---------------
-When both this plugin and the base translation plugin are loaded, the plugin
-loader detects that both register ``translate`` and both declare ``handles``.
-Rather than treating this as a conflict, it merges them into a DispatchPlugin
-that routes each invocation to the plugin owning the source language:
+HOW THIS PLUGIN SHARES THE ``translate`` COMMAND WITH THE BASE PLUGIN
+-------------------------------------------------------------------------
+This plugin declares ``handles = ["jp", "zh", "kr"]`` (the short codes a
+professor types on the command line, e.g. ``jp`` for Japanese) and the base
+plugin declares ``handles = ["en"]``. Because both plugins register the
+same ``translate`` command, the plugin loader does not treat that as a
+conflict — it notices both declare a ``handles`` list and merges them into
+one ``DispatchPlugin``. At startup, the DispatchPlugin calls the base
+plugin's ``register_subparsers()`` once to build the shared flags, then
+calls this plugin's ``register_command_flags()`` to add the extra
+East-Asia-only flags on top. When a professor actually runs a translation,
+the DispatchPlugin checks which *source* language was requested and routes
+to whichever plugin's ``handles`` list contains it:
 
-  translate jp-en  → this plugin owns Japanese, drives translation
-  translate en-jp  → base plugin owns English, drives translation;
-                   this plugin contributes Japanese destination guidance
-  translate jp-fr  → this plugin drives; French plugin (if loaded) contributes
-                   destination guidance; no French plugin → proceeds without it
+  ``translate jp-en``  → this plugin owns Japanese (the source), drives the
+                          translation
+  ``translate en-jp``  → base plugin owns English (the source), drives the
+                          translation; this plugin contributes Japanese
+                          destination-side guidance (see ``get_peer_guidance()``
+                          below) since Japanese is the target
+  ``translate jp-fr``  → this plugin drives; a French plugin, if one were
+                          installed, would contribute destination guidance;
+                          with no French plugin, translation proceeds
+                          without any destination-specific guidance
 
-EA-SPECIFIC FEATURES
---------------------
-  --kanbun     Source text is kanbun (漢文): apply kundoku word-order
-             reconstruction and classical Chinese reading conventions.
-             Appends KANBUN_NOTE (from fragments.py) to variant_notes on the
-             translation service before delegating to the shared executor.
+EA-SPECIFIC FLAGS
+------------------
+  ``--kanbun``
+      The source text is kanbun (漢文) — Classical Chinese written for
+      Japanese kundoku (訓読) reading, where small marks next to the
+      characters indicate reading order and grammatical hints. This flag
+      tells the model to reconstruct Japanese word order and follow
+      Classical Chinese reading conventions rather than translating the
+      characters in their literal written order. Appends ``KANBUN_NOTE``
+      (from ``fragments.py``) to the translation service's
+      ``variant_notes`` list before handing off to the base plugin's shared
+      execution logic.
 
-  --simplified / --traditional
-             Source Chinese text uses a specific script variety.
-             Changes the resolved source language from "Chinese" to
-             "Simplified Chinese" or "Traditional Chinese" in the prompt.
-             Mutually exclusive; only valid when the source language is ``zh``.
+  ``--simplified`` / ``--traditional``
+      The source Chinese text uses one specific script variety. Changes
+      the resolved source language passed to the AI model from ``"Chinese"``
+      to ``"Simplified Chinese"`` or ``"Traditional Chinese"``, so the model
+      knows not to convert characters to the other variety. Mutually
+      exclusive with each other; only valid when the source language is
+      ``zh``.
 
 FRAGMENT REGISTRATION
 ---------------------
-At import time this plugin loads fragments.py and registers East Asia script
-guidance and language-pair notes into the base plugin's translation_fragments
-module via setdefault(), so the first-loaded plugin's entry always wins if
-two language plugins ever register the same token.
+At import time this plugin loads ``fragments.py``, which adds East Asia
+script guidance and language-pair notes into the base plugin's shared
+``translation_fragments`` module using ``dict.setdefault()`` rather than
+plain assignment — so if a future language plugin ever tries to register
+the same key (e.g. another plugin also providing Japanese script guidance),
+whichever plugin's entry was added first is kept, and a later plugin can't
+silently overwrite it.
 """
 
 from __future__ import annotations
@@ -58,9 +82,21 @@ _PLUGIN_DIR = Path(__file__).parent
 # ── EA-internal module loader ─────────────────────────────────────────────────
 
 def _load_ea_module(name: str, rel_path: str):
-    """Load a module local to this plugin and register it in sys.modules.
+    """Load one of this plugin's own files and register it under a shared import path.
 
-    Returns the loaded module, or None if the file does not exist.
+    Used once, below, to load ``fragments.py`` so ``run()`` can reference
+    its constants (like ``KANBUN_NOTE``) without a plain relative import,
+    keeping this plugin consistent with the ``sys.modules``-registration
+    pattern the base plugin and other extension plugins use.
+
+    Args:
+        name: The dotted import path to register the module under (e.g.
+              ``'pu_plugin.translation_ea.fragments'``).
+        rel_path: The module's real file location, relative to this
+                  plugin's own folder.
+
+    Returns:
+        The loaded module object, or ``None`` if the file doesn't exist.
     """
     if name in sys.modules:
         return sys.modules[name]
@@ -93,8 +129,14 @@ from src.errors import CLIError                                # noqa: E402
 # ── Plugin class ───────────────────────────────────────────────────────────────
 
 class EastAsiaTranslationPlugin:
-    """East Asia translation plugin.  Owns Japanese, Chinese, and Korean as
-    source languages and contributes East Asia destination guidance.
+    """Adds Japanese, Chinese, and Korean support to the ``translate`` command.
+
+    Owns Japanese, Chinese, and Korean as *source* languages (so
+    ``translate jp-en`` and similar routes here) and contributes East Asia
+    destination-side guidance when one of these languages is instead the
+    *target* of a translation driven by another plugin. See the module
+    docstring above for how this combines with the base translation plugin
+    at startup.
     """
 
     commands: list[str] = ["translate"]
@@ -113,11 +155,17 @@ class EastAsiaTranslationPlugin:
     # ── Argument registration ──────────────────────────────────────────────────
 
     def register_command_flags(self, parser: argparse.ArgumentParser) -> None:
-        """Add East Asia-specific flags to an existing 'translate' subparser.
+        """Add the East-Asia-only command-line flags (``--kanbun``, ``--simplified``, ``--traditional``) to the shared ``translate`` parser.
 
-        Called by DispatchPlugin when building the merged parser.  Only EA-
-        owned flags belong here — universal flags are registered by the base
-        plugin via its own register_command_flags() call.
+        Called by ``DispatchPlugin`` once the base plugin has already built
+        the ``translate`` subcommand and its universal flags (like
+        ``-i``/``--input``). This method only adds the flags specific to
+        this plugin's languages.
+
+        Args:
+            parser: The argparse subcommand parser the base plugin already
+                    created for ``translate``, which this method adds more
+                    flags onto in place.
         """
         ea_group = parser.add_argument_group("East Asia options")
         ea_group.add_argument(
@@ -147,12 +195,21 @@ class EastAsiaTranslationPlugin:
         self,
         subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
     ) -> None:
-        """Register a standalone 'translate' subcommand.
+        """Build a full standalone ``translate`` command, for use without the base plugin installed.
 
-        Used only when this plugin loads without a DispatchPlugin (i.e. the
-        base translation plugin is absent — an unsupported but gracefully
-        handled configuration).  In the normal two-plugin setup, DispatchPlugin
-        calls register_command_flags() on this plugin instead.
+        This is a fallback path, only used when this plugin is running
+        without the base translation plugin installed alongside it — an
+        unsupported but gracefully handled situation (see the module
+        docstring above). In the normal setup, the base plugin builds the
+        ``translate`` command via its own ``register_subparsers()``, and
+        this plugin only adds its extra flags on top via
+        ``register_command_flags()`` above; this method never runs in that
+        case.
+
+        Args:
+            subparsers: The shared subcommand registry passed in by the CLI
+                        startup code, the same object every plugin's
+                        commands get added to.
         """
         from plugins.translation.utils import validate_page_nums
         from src.services.constants import DEFAULT_PARALLEL_WORKERS
@@ -203,12 +260,23 @@ class EastAsiaTranslationPlugin:
     # ── Peer guidance ──────────────────────────────────────────────────────────
 
     def get_peer_guidance(self, token: str) -> Optional[str]:
-        """Return destination-side guidance when an EA language is the target.
+        """Provide extra instructions for the AI model when one of this plugin's languages is the translation *target*, not the source.
 
-        Called by DispatchPlugin when this plugin owns the destination language
-        and a different plugin is driving the translation.  Returns a string to
-        inject EA destination conventions into the source plugin's prompt, or
-        None if no special guidance is needed for this target.
+        Called by ``DispatchPlugin`` when a different plugin is driving a
+        translation (because it owns the *source* language) but the
+        *destination* language is one this plugin owns — for example,
+        translating ``en-jp`` is driven by the base (English) plugin, but
+        Japanese is this plugin's language, so this method gets a chance to
+        add Japanese-specific guidance to the base plugin's prompt.
+
+        Args:
+            token: The short destination-language code being translated
+                   into (e.g. ``'jp'``).
+
+        Returns:
+            A string of extra instructions to add to the AI model's prompt,
+            or ``None`` if this plugin has no special guidance registered
+            for that destination language.
         """
         if _frags and hasattr(_frags, 'PEER_GUIDANCE'):
             return _frags.PEER_GUIDANCE.get(token)
@@ -225,7 +293,40 @@ class EastAsiaTranslationPlugin:
         top_p: Optional[float],
         max_tokens: Optional[int],
     ) -> None:
-        """Execute the translate command for an East Asian source language."""
+        """Run the ``translate`` command when Japanese, Chinese, or Korean is the source language.
+
+        Builds a ``SandboxProcessor`` (which resolves the professor's API
+        key and sets up token/cost tracking), resolves the source and
+        target languages from the requested language-pair code, applies any
+        Chinese script-variant flags and kanbun guidance to the translation
+        service's notes, then delegates all universal validation and
+        execution to the base translation plugin's shared
+        ``_execute_translate()`` function.
+
+        Args:
+            args: The object holding all the parsed command-line flags for
+                  this run (the language pair, input file path, whether
+                  ``--kanbun`` was passed, etc.).
+            professor: The Princeton NetID whose configuration and API key
+                       should be used for this run (e.g. ``'heller'``).
+            model: The AI model explicitly requested on the command line, or
+                   ``None`` to use the configured default.
+            temperature: The requested sampling temperature (controls how
+                         predictable vs. varied the model's wording is), or
+                         ``None`` to use the default.
+            top_p: The requested nucleus-sampling value (an alternative way
+                   of controlling response variety), or ``None`` to use the
+                   default.
+            max_tokens: The requested maximum response length, in tokens
+                        (the small chunks of text models process and bill
+                        by), or ``None`` to use the default.
+
+        Raises:
+            CLIError: If the base translation plugin isn't installed, the
+                      language-pair argument is malformed, or
+                      ``--simplified``/``--traditional`` is used with a
+                      non-Chinese source language.
+        """
         from src.runtime.sandbox_processor import SandboxProcessor
 
         # Base plugin is required for the service layer.

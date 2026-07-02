@@ -3,7 +3,7 @@
 ## Plugin Overview
 This is the East Asia extension for the `translate` command in [PU AI Sandbox](https://github.com/princeton-oit/PU_AISandbox). It adds support for Japanese, Chinese (Simplified/Traditional), and Korean as source languages, and contributes East Asian destination-side guidance when those languages appear as translation targets.
 
-This repo lives at `plugins/translation-ea/` inside the main PU_AISandbox repo. It **requires** the base translation plugin (`plugins/translation/`) to be present — the base plugin owns the service layer. This plugin owns only its fragment registrations, one CLI flag (`--kanbun`), and routing logic.
+This repo lives at `plugins/translation-ea/` inside the main PU_AISandbox repo. It **requires** the base translation plugin (`plugins/translation/`) to be present — the base plugin owns the service layer. This plugin owns only its fragment registrations, three CLI flags (`--kanbun`, `--simplified`, `--traditional`), and routing logic.
 
 All `src.*` imports resolve against the main repo's `src/`. The service imports (`src.services.*`) resolve via the base plugin's sys.modules injection, which runs before this plugin loads (alphabetical order guarantee).
 
@@ -18,7 +18,13 @@ settings.toml                    Default model parameters (mirrors base plugin d
 conftest.py                      Inserts main repo root into sys.path for pytest
 pytest.ini                       testpaths=tests, pythonpath=../..
 tests/
-  ...
+  test_preserve_media_cli.py     CLI flag/validation tests carried over from the shared plugin
+                                  template (the --preserve-media flag it tests belongs to the base
+                                  plugin, not this one). There is currently no test coverage for
+                                  this plugin's own behavior: --kanbun, --simplified/--traditional,
+                                  or the dispatch/routing logic. Flagged as a known gap — add
+                                  coverage here before relying on this plugin's EA-specific flags
+                                  in anything test-gated.
 ```
 
 ---
@@ -65,7 +71,7 @@ Key items:
 
 ## Common Patterns
 
-- **Adding a new EA language**: add script guidance to `_SCRIPT_GUIDANCE` in `fragments.py`; add relevant pair notes to `_PAIR_NOTES`; add the full language name to `EastAsiaTranslationPlugin.handles` in `plugin.py`.
+- **Adding a new EA language**: add script guidance to `_SCRIPT_GUIDANCE` in `fragments.py` (keyed by full language name); add relevant pair notes to `_PAIR_NOTES`; add its short code (matching the key in `LANGUAGE_MAP`, e.g. `"vi"` for Vietnamese) to `EastAsiaTranslationPlugin.handles` in `plugin.py`.
 - **Adding a new variant flag** (like `--kanbun`): add the fragment constant to `fragments.py`; add the flag in `register_command_flags()`; append the note in `run()` before calling `_execute_translate`.
 - **Adding peer guidance for a destination**: add an entry to `PEER_GUIDANCE` in `fragments.py` keyed by the exact full language name.
 - **Never** add universal flags (language_code, -i, -o, -w, etc.) to `register_command_flags()` — those belong to the base plugin.
