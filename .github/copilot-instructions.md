@@ -20,11 +20,12 @@ pytest.ini                       testpaths=tests, pythonpath=../..
 tests/
   test_preserve_media_cli.py     CLI flag/validation tests carried over from the shared plugin
                                   template (the --preserve-media flag it tests belongs to the base
-                                  plugin, not this one). There is currently no test coverage for
-                                  this plugin's own behavior: --kanbun, --simplified/--traditional,
-                                  or the dispatch/routing logic. Flagged as a known gap — add
-                                  coverage here before relying on this plugin's EA-specific flags
-                                  in anything test-gated.
+                                  plugin, not this one).
+  test_translate_cli.py          CLI flag parsing for --kanbun, --simplified, --traditional.
+  test_plugin_run.py             run() behavior: Chinese script-variant resolution, kanbun/peer-
+                                  guidance variant-note injection, requires-base-plugin guard.
+                                  SandboxProcessor and the base plugin's _execute_translate() are
+                                  mocked, so these don't need a real API key.
 ```
 
 ---

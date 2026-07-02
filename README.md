@@ -64,12 +64,15 @@ pytest
 
 # Run with verbose output, or a specific file:
 pytest -v
-pytest tests/test_preserve_media_cli.py
+pytest tests/test_plugin_run.py
 ```
 
 `pytest.ini` adds the main repo root to `sys.path` automatically via `conftest.py`, so `src.*` imports resolve without extra setup.
 
-**Known gap**: the one test file here (`test_preserve_media_cli.py`) covers `--preserve-media`, a base-plugin flag, not this plugin's own behavior — there's currently no test coverage for `--kanbun`, `--simplified`/`--traditional`, or the dispatch/routing logic that is this plugin's actual purpose.
+Test files:
+- `test_preserve_media_cli.py` — covers `--preserve-media`, a base-plugin flag (carried over from the shared plugin template).
+- `test_translate_cli.py` — CLI flag parsing for `--kanbun`, `--simplified`, `--traditional`.
+- `test_plugin_run.py` — `run()` behavior: Chinese script-variant resolution, kanbun/peer-guidance variant notes, and the requires-base-plugin guard.
 
 ---
 
