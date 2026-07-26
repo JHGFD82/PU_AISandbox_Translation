@@ -124,6 +124,65 @@ _frags = _load_ea_module("pu_plugin.translation_ea.fragments", "fragments.py")
 from src.cli import add_common_flags, add_notes_flags        # noqa: E402
 from src.config import parse_language_code, LANGUAGE_MAP                     # noqa: E402
 from src.errors import CLIError                                # noqa: E402
+from src.runtime.ui_action import UiField, register_extension_ui_hooks  # noqa: E402
+
+
+# ── Web UI composer integration ────────────────────────────────────────────────
+# Contributes a "Use Kanbun reading conventions" checkbox to the base
+# plugin's own composer job modal — shown as a subsection once a professor
+# picks Japanese as the *destination* language, the same trigger point as
+# get_peer_guidance() below and the design call already recorded in
+# docs/webui-plugin-plan.md section 10 ("Resolved, same day": a subsection
+# appearing right after the base plugin's own options, refreshing whenever
+# the destination language is picked). See ExtensionUiHooks's docstring in
+# src/runtime/ui_action.py for the full mechanism this plugs into, and
+# plugins/translation/plugin.py's TEMPLATE GUIDE step 8 for the worked
+# example this mirrors almost exactly.
+#
+# Registered here at import time, independent of this plugin's own
+# ``handles`` list — the composer always drives a translate job through the
+# *base* plugin's ``run_ui_action`` (see ``ExtensionUiHooks``'s own
+# docstring for why: ``run_ui_action`` is looked up directly off the
+# primary plugin instance, never through ``DispatchPlugin``'s source-
+# language routing), so this checkbox must be reachable regardless of which
+# plugin would have driven the equivalent CLI command.
+
+
+def _apply_kanbun_ui_hook(sandbox, fields: dict) -> None:
+    """Append the kanbun/kundoku reading-convention note to this job's variant notes, if the composer's checkbox was checked.
+
+    Called by the base translation plugin's ``run_ui_action`` via
+    ``apply_extension_ui_hooks`` on every submitted translate job where
+    Japanese is the destination language — a no-op (not an error) when the
+    checkbox was left unchecked, the same as the CLI's own ``--kanbun``
+    flag simply being absent when a professor doesn't need it.
+
+    Args:
+        sandbox: The already-constructed ``SandboxProcessor`` for this job
+                 (see ``ExtensionUiHooks.apply``'s docstring).
+        fields: The full submitted composer fields dict; only this hook's
+                own ``"kanbun"`` key is read.
+    """
+    checked = str(fields.get("kanbun", "")).strip().lower() in ("true", "1", "on", "yes")
+    if checked and _frags is not None:
+        sandbox.translation_service.variant_notes.append(_frags.KANBUN_NOTE)
+
+
+if _frags is not None:
+    register_extension_ui_hooks(
+        action_id="translate",
+        token="jp",
+        fields=[
+            UiField(
+                name="kanbun",
+                label="Use Kanbun reading conventions",
+                kind="checkbox",
+                required=False,
+                group="Japanese (kanbun)",
+            ),
+        ],
+        apply=_apply_kanbun_ui_hook,
+    )
 
 
 # ── Plugin class ───────────────────────────────────────────────────────────────
