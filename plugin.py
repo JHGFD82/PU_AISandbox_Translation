@@ -124,6 +124,7 @@ _frags = _load_ea_module("pu_plugin.translation_ea.fragments", "fragments.py")
 from src.cli import add_common_flags, add_notes_flags        # noqa: E402
 from src.config import parse_language_code, LANGUAGE_MAP                     # noqa: E402
 from src.errors import CLIError                                # noqa: E402
+from src.settings import IMAGE_TRANSLATION_ROLE, TRANSLATION_ROLE  # noqa: E402
 from src.runtime.ui_action import UiField, register_extension_ui_hooks  # noqa: E402
 
 
@@ -197,6 +198,16 @@ class EastAsiaTranslationPlugin:
     docstring above for how this combines with the base translation plugin
     at startup.
     """
+
+    # Which models this plugin's work should use. Required of every plugin
+    # (see src/runtime/model_role.py). Deliberately the base plugin's roles:
+    # this extension does the same jobs, for different languages, so it should
+    # use the same models — and declaring its own constants of the same names
+    # would collide with the base plugin's in src.settings.
+    model_roles = {
+        "translation": TRANSLATION_ROLE,
+        "image_translation": IMAGE_TRANSLATION_ROLE,
+    }
 
     commands: list[str] = ["translate"]
 
